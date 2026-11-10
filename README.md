@@ -67,15 +67,6 @@ irm https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/
 3. 参考[笔迹研究记录](training/new_chinese_handwriting/README.md)运行样本处理和轨迹生成脚本，再检查生成字形的可读性。
 
 
-## 致谢
-
-感谢以下开源项目和作者为妙笔工坊提供的代码、研究与灵感：
-
-- [SDT](https://github.com/dailenson/SDT)：手写笔迹生成与个性化研究基础。
-- [HandwriteCraft](https://github.com/Eyjafjallaaa/HandwriteCraft)：手写文稿生成和界面设计参考。
-- [Handright](https://github.com/Gsllchb/Handright)：可选的手写文字渲染方案。
-- [hfmath](https://github.com/LingDong-/hfmath)：数学公式排版思路参考。
-- [DIS](https://github.com/xuebinqin/DIS)：手写擦除实验所用的模型架构代码。
 
 ## 许可
 
