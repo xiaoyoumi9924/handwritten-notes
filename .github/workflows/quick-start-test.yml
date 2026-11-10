@@ -38,7 +38,7 @@ jobs:
             if (-not $ok) { throw 'Installation did not start the application.' }
             if (-not (Test-Path (Join-Path $env:MIAOBI_BIN_DIR 'miaobi.cmd'))) { throw 'Quick command was not installed.' }
           } finally {
-            if (-not $p.HasExited) { & taskkill /T /F /PID $p.Id | Out-Null }
+            if (-not $p.HasExited) { & cmd.exe /c "taskkill /T /F /PID $($p.Id) >NUL 2>&1" | Out-Null; $global:LASTEXITCODE = 0 }
             if (Test-Path $stdout) { Get-Content $stdout }
             if (Test-Path $stderr) { Get-Content $stderr }
           }
