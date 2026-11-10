@@ -1,0 +1,301 @@
+{
+  "dataset": "new_chinese_handwriting_v1",
+  "target_font_name": null,
+  "status": "sdt_49_reference_pilot_quality_rejected_clean_reference_capture_and_domain_adaptation_needed",
+  "permission": "user_confirmed_training_authorization",
+  "preserve_existing_assets": [
+    "font/1_SDT.ttf",
+    "font/AnJingChenYingBiXingShu-2.ttf",
+    "font/PingFangShaoHuaTi-2.ttf",
+    "src/markdown_to_handwrite/assets/sdt_trajectories.zip"
+  ],
+  "observations": [
+    "6 user-provided handwritten Chinese page photos",
+    "all pages contain red ruled lines and large semi-transparent watermarks",
+    "some pages have perspective skew or page curvature",
+    "originals are retained unchanged; watermark-covered glyphs must be marked low-confidence",
+    "5 additional user-provided pages from the same handwriting, added as source pages 007-011",
+    "additional pages include some English and numerals; no sufficient handwritten math-formula coverage yet",
+    "Added user-provided page_012 capture sheet: 56 one-character cells were transcribed in printed order. Red rules were suppressed; 9 watermark-adjacent cells were excluded, and 12 safe candidates duplicated existing labels, leaving 35 new unique style references for an 84-image inference pilot."
+  ],
+  "source_images": [
+    {
+      "file": "source/page_001.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1494859,
+      "sha256": "bd0ba8277809b44f670be8bc280f74c29b16dcf6009950cc22b204e770d06dd5",
+      "notes": "watermarked ruled-paper photo; keep watermark and low-confidence covered glyphs flagged during annotation"
+    },
+    {
+      "file": "source/page_002.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1682303,
+      "sha256": "1d2b0c03fa267d243956838ea28004d566ea8b32a08360bff476ff76af7d86a0",
+      "notes": "watermarked ruled-paper photo; keep watermark and low-confidence covered glyphs flagged during annotation"
+    },
+    {
+      "file": "source/page_003.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1761742,
+      "sha256": "fa3d9aa94bf77e6dcc5ff0650c7af5a93502e769d8d15d87f55ce5c8bc497764",
+      "notes": "watermarked ruled-paper photo; keep watermark and low-confidence covered glyphs flagged during annotation"
+    },
+    {
+      "file": "source/page_004.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1583625,
+      "sha256": "3d3535b403033a2e6e6d7911f295d64ec04053c036173833946cacde9e47e2c4",
+      "notes": "watermarked ruled-paper photo; keep watermark and low-confidence covered glyphs flagged during annotation"
+    },
+    {
+      "file": "source/page_005.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1563964,
+      "sha256": "a866c878d53ddd19b682370eb3f19099589d2949cefe9a6aec27e0e64a736441",
+      "notes": "watermarked ruled-paper photo; keep watermark and low-confidence covered glyphs flagged during annotation"
+    },
+    {
+      "file": "source/page_006.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1535590,
+      "sha256": "1aea613d02bdbaf7da6d884fcde3296604b7754f1795720e0ad911f1ab379133",
+      "notes": "watermarked ruled-paper photo; keep watermark and low-confidence covered glyphs flagged during annotation"
+    },
+    {
+      "file": "source/page_007.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1737215,
+      "sha256": "2c9553895d90ef17e4a61d65cec37ee416c93cd477bdb66a49c9bf3fde5780bc",
+      "notes": "user-provided same-handwriting sample; ruled paper and large watermark; keep watermark-covered glyphs low-confidence"
+    },
+    {
+      "file": "source/page_008.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1659098,
+      "sha256": "9ec408d6d93cd9c0522f6f81f088b12466885b8bb4b7dec601608a5b248750ca",
+      "notes": "user-provided same-handwriting sample; ruled paper and large watermark; keep watermark-covered glyphs low-confidence"
+    },
+    {
+      "file": "source/page_009.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1893140,
+      "sha256": "0b1a4b990d645c0693c19772150240b84486aa259f326b38afcda1cf27c580b3",
+      "notes": "user-provided same-handwriting sample; ruled paper and large watermark; keep watermark-covered glyphs low-confidence"
+    },
+    {
+      "file": "source/page_010.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1801206,
+      "sha256": "59e3d85dc835fcc6cb5ccc508f37a4a7ec1fbfe37a6612d738e70630e2bf9110",
+      "notes": "user-provided same-handwriting sample; ruled paper and large watermark; keep watermark-covered glyphs low-confidence"
+    },
+    {
+      "file": "source/page_011.png",
+      "width": 1279,
+      "height": 1706,
+      "mode": "RGB",
+      "bytes": 1835599,
+      "sha256": "9acfcd74021e8d3732b3d6d73611ace30bfaef0c451818075b4204bc530dfbb4",
+      "notes": "user-provided same-handwriting sample; ruled paper and large watermark; keep watermark-covered glyphs low-confidence"
+    },
+    {
+      "file": "source/page_012.png",
+      "width": 548,
+      "height": 508,
+      "mode": "RGBA",
+      "bytes": 241383,
+      "sha256": "44759a22a233b9454d3451097bbad9be58d39e92aaae3b5d69cf5e2d64e5527c",
+      "notes": "user-provided capture-sheet page; 56 labeled cells; red rules suppressed in derived candidates; watermark-adjacent cells flagged and excluded from the pilot"
+    }
+  ],
+  "ocr_preliminary": {
+    "method": "Apple Vision OCR; uncorrected line candidates",
+    "review_file": "ocr-review.csv (local and gitignored)",
+    "line_count": 221,
+    "han_character_candidates": 5664,
+    "unique_han_character_candidates": 1174,
+    "mean_line_confidence": 0.5579,
+    "lines_below_0_60_confidence": 185,
+    "manual_review_required": true,
+    "warning": "Candidate character coverage is approximate; OCR errors, watermark overlap, and ruled lines require manual review.",
+    "pages": [
+      {
+        "file": "page_001.png",
+        "lines": 18,
+        "mean_confidence": 0.5778,
+        "below_0_60": 14
+      },
+      {
+        "file": "page_002.png",
+        "lines": 21,
+        "mean_confidence": 0.5,
+        "below_0_60": 19
+      },
+      {
+        "file": "page_003.png",
+        "lines": 21,
+        "mean_confidence": 0.6429,
+        "below_0_60": 15
+      },
+      {
+        "file": "page_004.png",
+        "lines": 19,
+        "mean_confidence": 0.6211,
+        "below_0_60": 14
+      },
+      {
+        "file": "page_005.png",
+        "lines": 18,
+        "mean_confidence": 0.6,
+        "below_0_60": 14
+      },
+      {
+        "file": "page_006.png",
+        "lines": 18,
+        "mean_confidence": 0.6111,
+        "below_0_60": 14
+      },
+      {
+        "file": "page_007.png",
+        "lines": 21,
+        "mean_confidence": 0.4667,
+        "below_0_60": 20
+      },
+      {
+        "file": "page_008.png",
+        "lines": 20,
+        "mean_confidence": 0.54,
+        "below_0_60": 18
+      },
+      {
+        "file": "page_009.png",
+        "lines": 22,
+        "mean_confidence": 0.5364,
+        "below_0_60": 20
+      },
+      {
+        "file": "page_010.png",
+        "lines": 22,
+        "mean_confidence": 0.5318,
+        "below_0_60": 19
+      },
+      {
+        "file": "page_011.png",
+        "lines": 21,
+        "mean_confidence": 0.5333,
+        "below_0_60": 18
+      }
+    ]
+  },
+  "second_pass_transcription": {
+    "method": "numbered line-crop image transcription",
+    "line_count": 221,
+    "nonempty_candidate_lines": 220,
+    "unique_han_character_candidates": 1162,
+    "latin_letters_seen": "a c d e f g h i l m n o p r s t u v y",
+    "digits_seen": "0 1 2 3 4 5 6 7 8 9",
+    "status": "all_candidates_pending_source_image_confirmation",
+    "manual_merge_or_overlap_rows": [
+      {
+        "page": "page_002.png",
+        "line_index": 15
+      }
+    ],
+    "warning": "Model-assisted transcription is not verified ground truth. Watermark-covered strokes, split English text, punctuation, and line-box overlaps need review before glyph extraction."
+  },
+  "glyph_candidate_segmentation": {
+    "method": "vertical ink projection; only exact character-count/run-count lines emitted",
+    "processed_lines": 28,
+    "glyph_crop_count": 668,
+    "unique_label_candidates": 346,
+    "skipped_lines": 193,
+    "status": "provisional_requires_visual_review",
+    "warning": "Exact run counts do not prove correct glyph boundaries. Transcription, watermark overlap, and every crop require visual review before font construction."
+  },
+  "font_prototype": {
+    "file": "prepared/prototype/handwriting_sample_prototype.ttf",
+    "preview": "prepared/prototype/handwriting_sample_prototype_preview.png",
+    "glyph_count": 346,
+    "source_sample_count": 668,
+    "status": "deprecated_direct_raster_trace_not_style_transfer_not_integrated",
+    "warning": "Do not use for production: incomplete charset and unverified labels/watermark contamination.",
+    "quality_gate": "No samples promoted; all transcription labels still need confirmation.",
+    "decision": "Preserved only as a technical export experiment; do not extend or use as the new style."
+  },
+  "glyph_visual_screening": {
+    "date": "2026-11-06",
+    "method": "visual inspection of generated contact sheets; no external service used in this step",
+    "review_sheet_count": 7,
+    "candidate_lines_screened": 28,
+    "glyph_crops_screened": 668,
+    "status": "visual_screening_complete_label_verification_pending",
+    "findings": [
+      "Contact sheets help identify crop appearance but cannot confirm that OCR candidate labels are correct.",
+      "Some punctuation and Latin fragments are very narrow and require individual review before font construction.",
+      "Watermark overlap remains a per-glyph risk; no crop was promoted to verified in this screening."
+    ],
+    "decision": "Keep the TTF as an isolated pipeline preview only; do not integrate it into the app or describe it as a trained release font."
+  },
+  "sdt_personalization": {
+    "method": "SDT official user personalization: condition the pretrained writer-style generator on clean reference glyph images and generate predicted trajectories; no raster glyph splicing",
+    "repository": "references/SDT",
+    "repository_commit": "ba1da57",
+    "style_reference_dir": "prepared/sdt-style-samples",
+    "style_reference_count": 49,
+    "style_reference_status": "49_unique_han_glyphs_from_three_high_confidence_lines_scaled_to_56px; diagnostic_contact_sheet_excluded_from_inference",
+    "checkpoint_available_locally": true,
+    "checkpoint": "checkpoints/checkpoint-iter199999.pth",
+    "checkpoint_size_bytes": 273587031,
+    "checkpoint_sha256": "e23ae03af8099c9fa09bc4f1b80dad3f3457cc73e651e4f6e23ff6aa1e41aa89",
+    "checkpoint_source": "https://github.com/dailenson/SDT",
+    "chinese_content_dictionary_available_locally": true,
+    "content_data": "prepared/sdt_inputs/CASIA_CHINESE",
+    "character_count": 6763,
+    "character_dict_sha256": "d790a3d89b50fcd3e3f9aa2068ab485004b1a205614ddbac0fbd22782f8627c3",
+    "chinese_content_sha256": "374779cb759382e3c440c7d689ad280799c72b5d3ca9c63a7cb9b8efaa865047",
+    "dataset_note": "Only the official content glyph dictionary and character list were extracted; the full approximately 6 GB CASIA dataset was not downloaded.",
+    "runtime": {
+      "pytorch": "2.15.0",
+      "torchvision": "0.29.2",
+      "device": "Apple M5 MPS"
+    },
+    "inference_runner": "scripts/generate_sdt_style_trajectories.py",
+    "inference_status": "49_and_84_reference_12_character_pilots_quality_rejected",
+    "pilot_characters": "好我中国字的学生清风山水",
+    "pilot_preview": "generated/pilot-page012-vs-49.png",
+    "pilot_result": "49 references, thresholded binary references, references resized to match official glyph occupancy, erosion, and Zhang-Suen thinning were compared on the same 12 target characters. None passed legibility and style review. Some thinned references alter generated shapes but lose the source's natural stroke weight. No pilot is integrated. The follow-up 84-reference run added 35 unique clean glyphs from page_012; outputs remained severely distorted and did not pass legibility/style review.",
+    "preprocessing_diagnostic": "Style references now use 49 unique Han glyphs from three high-confidence lines. The inference loader reads numbered glyph files only and excludes the QA contact sheet. Binary and occupancy-normalized variants did not materially improve generation. The official model's documented real-world stroke-width domain gap is the likely blocker; input-only tweaks have reached diminishing returns.",
+    "domain_gap_reference": "https://github.com/dailenson/SDT/issues/43",
+    "capture_sheet": "templates/sdt_style_capture_sheet.png",
+    "next_step": "Stop adding more image-only references to this unchanged pretrained model. Investigate a static-image-compatible fine-tuning path or collect online pen trajectories for the SDT training workflow; keep all generated candidates isolated until they pass the same legibility/style gate.",
+    "page_012_review_dir": "prepared/sdt-capture-page-012-review",
+    "page_012_capture_count": 56,
+    "page_012_watermark_excluded_count": 9,
+    "page_012_duplicate_label_count": 12,
+    "page_012_new_unique_reference_count": 35,
+    "page_012_pilot_style_dir": "prepared/sdt-style-page012-pilot",
+    "page_012_inference_status": "84_reference_12_character_pilot_quality_rejected",
+    "page_012_pilot_preview": "generated/pilot-page012-vs-49.png",
+    "page_012_pilot_result": "Adding 35 clean unique glyph references (84 total) changed some predicted trajectories but did not make the outputs legible. Comparison against the existing 49-reference run remains severely distorted. No weights were fine-tuned and no output was integrated."
+  }
+}

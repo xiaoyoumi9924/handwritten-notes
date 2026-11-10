@@ -1,0 +1,53 @@
+{
+  "page": {
+    "dpi": 300,
+    "margin_top_mm": 20,
+    "margin_bottom_mm": 18,
+    "margin_left_mm": 20,
+    "margin_right_mm": 20
+  },
+  "background": {
+    "style": "plain",
+    "paper_color": "#ffffff",
+    "auto_discover": false
+  },
+  "handwriting": {
+    "font_path": "font/1_SDT.ttf",
+    "ink_color": "#191919",
+    "body_font_pt": 15,
+    "h1_font_pt": 20,
+    "line_spacing": 1.75,
+    "word_spacing_px": 0,
+    "sdt_trajectory_path": "font_library/personal_v6/trajectories.zip",
+    "sdt_stroke_width": 8.0,
+    "sdt_coordinate_jitter": 0.05,
+    "elastic_strength_ratio": 0.0,
+    "dry_brush_probability": 0.0,
+    "ink_density_jitter": 0.0,
+    "sdt_taper": 0.2,
+    "sdt_width_jitter": 0.0,
+    "seed": 1001,
+    "uniform_ink_enabled": true,
+    "sdt_supersample": 4,
+    "stroke_weight_variation_sigma_ratio": 0.0,
+    "second_layer_enabled": false,
+    "baseline_wave_amplitude_ratio": 0.0,
+    "reference_glyph_path": null,
+    "fallback_font_path": "font/1_SDT.ttf",
+    "math_font_path": "font/Latin-Caveat-Regular.ttf",
+    "correction_probability": 0,
+    "preserve_chinese_punctuation": true,
+    "natural_one": true,
+    "handwritten_quotes": true,
+    "handwritten_punctuation": true,
+    "latin_font_path": "font/Latin-Caveat-Regular.ttf",
+    "latin_upright_correction_deg": 0,
+    "handwritten_digit_one": true
+  },
+  "layout": {
+    "show_page_numbers": true,
+    "number_sections": false,
+    "paragraph_gap_mm": 3,
+    "justify_paragraphs": true
+  }
+}

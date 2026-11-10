@@ -1,0 +1,44 @@
+name: Test Windows quick start
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Configure test repository access
+        run: gh auth setup-git
+      - name: Install and start
+        shell: pwsh
+        run: |
+          $env:MIAOBI_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'miaobi-check\app'
+          $env:MIAOBI_BIN_DIR = Join-Path $env:RUNNER_TEMP 'miaobi-check\bin'
+          $stdout = Join-Path $env:RUNNER_TEMP 'miaobi-out.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'miaobi-err.log'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts\quick-start.ps1'
+          $p = Start-Process powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$script`"") -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $ok = $false
+          try {
+            for ($i = 0; $i -lt 180; $i++) {
+              if ($p.HasExited) { break }
+              try {
+                $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8765/api/bootstrap' -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200 -and $response.Content -match 'presets') { $ok = $true; break }
+              } catch { }
+              Start-Sleep -Seconds 1
+            }
+            if (-not $ok) { throw 'Installation did not start the application.' }
+            if (-not (Test-Path (Join-Path $env:MIAOBI_BIN_DIR 'miaobi.cmd'))) { throw 'Quick command was not installed.' }
+          } finally {
+            if (-not $p.HasExited) { & taskkill /T /F /PID $p.Id | Out-Null }
+            if (Test-Path $stdout) { Get-Content $stdout }
+            if (Test-Path $stderr) { Get-Content $stderr }
+          }

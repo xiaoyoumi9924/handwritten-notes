@@ -1,0 +1,46 @@
+{
+  "page": {
+    "dpi": 300,
+    "margin_top_mm": 20,
+    "margin_bottom_mm": 18,
+    "margin_left_mm": 21,
+    "margin_right_mm": 19
+  },
+  "background": {
+    "style": "lined",
+    "auto_discover": false,
+    "paper_color": "#fffdf6",
+    "line_gap_mm": 8
+  },
+  "handwriting": {
+    "sdt_trajectory_path": "font/font02_v3_opacity/trajectories.zip",
+    "body_font_pt": 16,
+    "h1_font_pt": 18,
+    "line_spacing": 1.42,
+    "sdt_stroke_width": 9.5,
+    "sdt_coordinate_jitter": 0,
+    "sdt_width_jitter": 0,
+    "sdt_taper": 0,
+    "sdt_supersample": 3,
+    "elastic_strength_ratio": 0,
+    "dry_brush_probability": 0,
+    "seed": 42,
+    "ink_color": "#272523",
+    "second_layer_enabled": false,
+    "reference_glyph_path": "font/font02_v3_opacity/glyphs",
+    "uniform_ink_enabled": true,
+    "ink_density_jitter": 0,
+    "stroke_weight_variation_sigma_ratio": 0,
+    "reference_preserve_stroke_weight": true,
+    "perturb_theta_sigma": 0,
+    "perturb_x_sigma_px": 0,
+    "perturb_y_sigma_px": 0,
+    "advance_jitter_sigma_ratio": 0,
+    "baseline_wave_amplitude_ratio": 0
+  },
+  "layout": {
+    "number_sections": false,
+    "show_page_numbers": false,
+    "justify_paragraphs": false
+  }
+}
