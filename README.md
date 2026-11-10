@@ -10,14 +10,9 @@
 
 | 系统 | 下载 |
 | --- | --- |
-| Windows 10 / 11（64 位） | [下载 Windows 版](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-Windows.zip) |
-| macOS（Apple 芯片） | [下载 macOS Apple 芯片版](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-macOS-Apple-Silicon.zip) |
-| macOS（Intel 芯片） | [下载 macOS Intel 版](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-macOS-Intel.zip) |
-| Ubuntu / Linux（64 位） | [下载 Linux 版](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-Linux.tar.gz) |
-
-下载并解压后，Windows 双击 `Miaobi.exe`；macOS 打开 `Miaobi.app`；Linux 运行 `Miaobi` 文件夹中的 `Miaobi`。程序在本机运行，无需另外安装 Python。
-
-macOS 版尚未经过 Apple 公证，首次打开时可能需要在「系统设置 → 隐私与安全性」中允许打开。Windows 版需要系统安装 Microsoft Edge WebView2 运行时。Linux 版使用 Qt 界面，可能需要安装系统图形库。
+| Windows  | [下载 Windows 版](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-Windows.zip) |
+| macOS| [下载 macOS版](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-macOS-Apple-Silicon.zip) |
+| Linux | [下载 Linux 版](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-Linux.tar.gz) |
 
 ## 功能
 
@@ -31,7 +26,7 @@ macOS 版尚未经过 Apple 公证，首次打开时可能需要在「系统设�
 
 ### 1. 打开程序
 
-解压并打开上方下载的桌面应用。也可以按照[本地部署](#本地部署可选)从源码启动，然后在浏览器访问 <http://127.0.0.1:8765/>；源码方式使用期间请保持终端窗口打开。
+解压并打开上方下载的桌面应用。也可以按照[本地部署](#本地部署可选)从源码启动。
 
 ### 2. 转换手写文稿
 
@@ -45,8 +40,6 @@ macOS 版尚未经过 Apple 公证，首次打开时可能需要在「系统设�
 1. 切换到「智能扫描」，上传文档照片，支持 JPG、PNG、HEIC/HEIF、BMP 和 WebP。
 2. 调整纸面裁切范围，选择智能高清、黑白、增亮、灰度或反色等效果，点击「开始扫描」。
 3. 逐页检查结果，可旋转或添加标记，再选择图片、Word 或 PDF 导出。
-
-导出后可在「导出记录」中查看文件。编辑器草稿保存在浏览器本地，桌面版的预览和导出文件保存在用户目录下的 `妙笔工坊/output/`；源码版保存在项目的 `output/webui/`。
 
 ## 本地部署（可选）
 
@@ -64,10 +57,7 @@ curl -fsSL https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/do
 irm https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/install.ps1 | iex
 ```
 
-第一次运行会下载源码、安装依赖并打开页面，同时安装 `miaobi` 命令；以后重新打开终端，运行 `miaobi` 即可启动。默认地址为 <http://127.0.0.1:8765/>；如果端口已被占用，程序会自动选择其他端口，并在终端显示地址。使用期间保持终端打开，按 `Ctrl+C` 停止。
-
-> Web 版实际使用 Python 和 Git；Node.js 不参与当前版本的运行。Windows 安装 Python 时请保留 Python Launcher（`py`）。源码和生成文件保存在用户目录下的 `.miaobi/app/`，已有安装不会被覆盖。
-
+第一次运行会下载源码、安装依赖并打开页面，同时安装 `miaobi` 命令；以后重新打开终端，运行 `miaobi` 即可启动。默认地址为 <http://127.0.0.1:8765/>。
 ## ✍️ 定制你的笔迹
 
 想让生成的字更接近自己的笔迹？项目提供基于 [SDT](https://github.com/dailenson/SDT) 的个性化笔迹研究工具：收集并整理手写样本后，可使用 SDT 模型生成笔画轨迹，检查效果并探索制作自己的笔迹风格。
@@ -76,7 +66,6 @@ irm https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/
 2. 从 [SDT 项目](https://github.com/dailenson/SDT)获取源码并放到 `references/SDT/`，按其说明准备独立环境、数据和预训练权重；本仓库不包含这些源码、数据和权重。
 3. 参考[笔迹研究记录](training/new_chinese_handwriting/README.md)运行样本处理和轨迹生成脚本，再检查生成字形的可读性。
 
-> 个性化笔迹仍处于实验阶段，当前流程需要手动准备数据和环境，尚未集成到应用界面；静态照片不能直接替代 SDT 训练所需的在线笔迹轨迹，生成效果也需要逐字检查。本仓库不提供 SDT 源码，请从 [SDT 官方项目](https://github.com/dailenson/SDT)获取；训练和推理的具体要求请以原项目说明为准。
 
 ## 致谢
 
