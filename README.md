@@ -50,6 +50,8 @@ macOS 版尚未经过 Apple 公证，首次打开时可能需要在「系统设�
 
 ## 本地部署（可选）
 
+> 仓库暂未公开，以下免登录命令将在公开后可用。
+
 如果希望在浏览器里使用 Web 版，可以在本地一键部署。先安装 [Node.js](https://nodejs.org/)、[Git](https://git-scm.com/downloads) 和 [Python 3.10+](https://www.python.org/downloads/)，然后在终端运行：
 
 **macOS / Linux**
