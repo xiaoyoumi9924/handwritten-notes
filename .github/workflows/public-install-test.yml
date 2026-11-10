@@ -1,0 +1,31 @@
+name: Verify public install links
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify anonymous installer and repository access
+        shell: bash
+        run: |
+          curl -fsSL https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/install.sh -o "$RUNNER_TEMP/install.sh"
+          cmp "$RUNNER_TEMP/install.sh" scripts/quick-start.sh
+          cd "$RUNNER_TEMP"
+          GIT_TERMINAL_PROMPT=0 GIT_CONFIG_GLOBAL=/dev/null git -c credential.helper= ls-remote https://github.com/xiaoyoumi9924/handwritten-notes.git HEAD
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify anonymous PowerShell installer
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP 'install.ps1'
+          Invoke-WebRequest -Uri 'https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/install.ps1' -OutFile $target
+          if ((Get-FileHash $target).Hash -ne (Get-FileHash 'scripts/quick-start.ps1').Hash) { throw 'Installer does not match source' }
