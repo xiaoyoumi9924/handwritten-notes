@@ -28,4 +28,6 @@ jobs:
         run: |
           $target = Join-Path $env:RUNNER_TEMP 'install.ps1'
           Invoke-WebRequest -Uri 'https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/install.ps1' -OutFile $target
-          if ((Get-FileHash $target).Hash -ne (Get-FileHash 'scripts/quick-start.ps1').Hash) { throw 'Installer does not match source' }
+          $downloaded = (Get-Content -Raw $target).Replace("`r`n", "`n")
+          $source = (Get-Content -Raw 'scripts/quick-start.ps1').Replace("`r`n", "`n")
+          if ($downloaded -cne $source) { throw 'Installer does not match source' }
