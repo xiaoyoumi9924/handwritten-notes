@@ -57,7 +57,7 @@ curl -fsSL https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/do
 irm https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/install.ps1 | iex
 ```
 
-第一次运行会下载源码、安装依赖并打开页面，同时安装 `miaobi` 命令；以后重新打开终端，运行 `miaobi` 即可启动。默认地址为 <http://127.0.0.1:8765/>。
+第一次运行会下载源码、安装依赖并打开页面，同时安装 `miaobi` 命令；以后重新打开终端，运行 `miaobi` 即可启动。
 ## ✍️ 定制你的笔迹
 
 想让生成的字更接近自己的笔迹？项目提供基于 [SDT](https://github.com/dailenson/SDT) 的个性化笔迹研究工具：收集并整理手写样本后，可使用 SDT 模型生成笔画轨迹，检查效果并探索制作自己的笔迹风格。
