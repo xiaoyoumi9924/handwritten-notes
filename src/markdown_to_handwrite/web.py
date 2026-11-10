@@ -324,9 +324,13 @@ def _config_paths(value: Any, prefix: str = "") -> set[str]:
 # 内部笔迹配置保留给本地配置使用，不单独显示在侧栏。
 INTERNAL_CONFIG_PATHS = frozenset({
     "handwriting.reference_glyph_path", "handwriting.uniform_ink_enabled",
+    "handwriting.reference_preserve_stroke_weight", "handwriting.math_inline_scale",
+    "handwriting.math_stroke_weight_scale", "handwriting.math_display_left_aligned",
+    "handwriting.math_wrap_long", "handwriting.math_character_rotation_deg",
+    "handwriting.math_match_body_ink",
     "handwriting.natural_one", "handwriting.handwritten_quotes",
     "handwriting.handwritten_punctuation", "handwriting.preserve_chinese_punctuation",
-    "handwriting.handwritten_digit_one",
+    "handwriting.handwritten_digit_one", "handwriting.uniform_table_ink", "handwriting.legible_decimal_point",
 })
 
 
@@ -375,6 +379,77 @@ def _font_presets() -> dict[str, dict[str, Any]]:
         presets["personal_v6"] = {f"handwriting.{key}": value for key, value in handwriting.items()}
         for key in handwriting:
             presets["formal"].setdefault(f"handwriting.{key}", getattr(_DEFAULT_HANDWRITING, key))
+    font_path = "font/AnJingChenYingBiXingShu-2.ttf"
+    if (PROJECT_ROOT / font_path).is_file():
+        # Each font preset owns these fields so switching away restores the
+        # appropriate renderer instead of inheriting a previous font's settings.
+        font_fields = {
+            "font_path": font_path,
+            "latin_font_path": "font/Latin-Caveat-Regular.ttf",
+            "math_font_path": "font/Latin-Caveat-Regular.ttf",
+            "math_wrap_long": True,
+            "math_match_body_ink": True,
+            "math_character_rotation_deg": 1.3,
+            "math_font_pt": 20.0,
+            "math_display_left_aligned": True,
+            "math_inline_scale": 1.15,
+            "math_stroke_weight_scale": 1.0,
+            "math_jitter_scale": 0.55,
+            "fallback_font_path": None,
+            "sdt_trajectory_enabled": False,
+            "sdt_trajectory_path": None,
+            "reference_glyph_path": None,
+            "uniform_ink_enabled": True,
+            "handwritten_digit_one": True,
+            "handwritten_punctuation": True,
+            "preserve_chinese_punctuation": True,
+            "correction_probability": 0.0,
+        }
+        presets["anjingchen"] = {
+            **{key: getattr(_DEFAULT_HANDWRITING, key.split(".", 1)[1])
+               for key in presets.get("personal_v6", {})},
+            **STYLE_PRESETS["formal"],
+            **{f"handwriting.{key}": value for key, value in font_fields.items()},
+        }
+        for name in ("formal", "personal_v6"):
+            if name in presets:
+                for key in font_fields:
+                    presets[name].setdefault(f"handwriting.{key}", getattr(_DEFAULT_HANDWRITING, key))
+    shaohua_path = "font/PingFangShaoHuaTi-2.ttf"
+    if (PROJECT_ROOT / shaohua_path).is_file():
+        # Start from a complete font preset so switching fonts also resets
+        # formula and trajectory settings inherited from the previous choice.
+        fields = dict(presets.get("anjingchen", presets["formal"]))
+        fields.update({
+            "handwriting.font_path": shaohua_path,
+            "handwriting.latin_font_path": "font/Latin-Caveat-Regular.ttf",
+            "handwriting.math_font_path": "font/Latin-Caveat-Regular.ttf",
+            "handwriting.math_wrap_long": True,
+            "handwriting.math_match_body_ink": False,
+            "handwriting.math_character_rotation_deg": 0.0,
+            "handwriting.math_font_pt": 18.0,
+            "handwriting.math_display_left_aligned": False,
+            "handwriting.math_inline_scale": 1.1,
+            "handwriting.math_stroke_weight_scale": 1.0,
+            "handwriting.fallback_font_path": None,
+            "handwriting.sdt_trajectory_enabled": False,
+            "handwriting.sdt_trajectory_path": None,
+            "handwriting.reference_glyph_path": None,
+            "handwriting.uniform_ink_enabled": True,
+            "handwriting.handwritten_digit_one": True,
+            "handwriting.legible_decimal_point": True,
+            "handwriting.uniform_table_ink": True,
+            "handwriting.ink_density_jitter": 0.0,
+            "handwriting.dry_brush_probability": 0.0,
+            "handwriting.stroke_weight_variation_sigma_ratio": 0.0,
+            "handwriting.handwritten_punctuation": False,
+            "handwriting.preserve_chinese_punctuation": True,
+        })
+        presets["shaohua"] = fields
+        for name, preset in presets.items():
+            if name != "shaohua":
+                for key in fields:
+                    preset.setdefault(key, getattr(_DEFAULT_HANDWRITING, key.split(".", 1)[1]))
     return presets
 
 

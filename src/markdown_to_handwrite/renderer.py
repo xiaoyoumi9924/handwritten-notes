@@ -593,13 +593,14 @@ class ReportRenderer:
                 groups.append([(part.kind, "")])
             elif part.kind == "math":
                 try:
+                    inline_size = max(1, round(size * max(0.5, min(2.0, self.config.handwriting.math_inline_scale))))
                     box = self.formula_renderer.render_inline(
-                        part.text, size, max(1, max_width),
+                        part.text, inline_size, max(1, max_width),
                         seed_extra=f"{seed_extra}:math:{part_index}",
                     )
                 except LatexRenderError as error:
                     self._report_formula_error(part.text, error)
-                    box = self.formula_renderer.blank_inline(part.text, size, max(1, max_width))
+                    box = self.formula_renderer.blank_inline(part.text, inline_size, max(1, max_width))
                 groups.append([("math", box)])
             else:
                 for unit in _inline_units(self._punctuation(part.text)):
@@ -899,7 +900,10 @@ class ReportRenderer:
 
     def _formula_height(self, image: Image.Image) -> int:
         gap = mm_to_px(self.config.layout.formula_gap_mm, self.dpi)
-        return gap * 2 + image.height
+        rule_slack = 0
+        if self.config.handwriting.math_display_left_aligned and len(self._paper_rules) > 1:
+            rule_slack = int(np.median(np.diff(self._paper_rules)))
+        return gap * 2 + image.height + rule_slack
 
     def _draw_formula(self, text: str, image: Image.Image | None = None) -> None:
         if not text:
@@ -909,7 +913,21 @@ class ReportRenderer:
         total_h = self._formula_height(image)
         self._ensure_space(total_h)
         self.y += gap
-        x = self.margin_left + (self.content_w - image.width) // 2
+        if self.config.handwriting.math_display_left_aligned and self._paper_rules:
+            # Place the bottom of the formula just above the next paper rule.
+            # A formula taller than one ruled row may still span several rows.
+            clearance = max(2, mm_to_px(0.5, self.dpi))
+            rule = next((rule for rule in self._paper_rules
+                         if rule - clearance >= self.y + image.height), None)
+            if rule is not None and rule <= self.bottom_limit:
+                self.y = rule - clearance - image.height
+        if self.config.handwriting.math_display_left_aligned:
+            # A modest paragraph-like indent avoids making every equation look
+            # mechanically centered, while keeping long expressions on the page.
+            indent = min(mm_to_px(10, self.dpi), max(0, self.content_w - image.width))
+            x = self.margin_left + indent
+        else:
+            x = self.margin_left + (self.content_w - image.width) // 2
         self.page.alpha_composite(image, (x, self.y))
         self.y += image.height
         self.y += gap
@@ -1156,11 +1174,12 @@ class ReportRenderer:
                 # ink RNGs. A fixed per-formula seed also makes column order
                 # irrelevant to the width estimate.
                 probe = FormulaRenderer(self.engine, seed=f"{self.config.handwriting.seed}:table:{latex}")
+                inline_size = max(1, round(size * max(0.5, min(2.0, self.config.handwriting.math_inline_scale))))
                 try:
-                    box = probe.render_inline(latex, size, self.content_w, seed_extra="table:measure")
+                    box = probe.render_inline(latex, inline_size, self.content_w, seed_extra="table:measure")
                 except LatexRenderError:
                     # The actual cell render reports the error once.
-                    box = probe.blank_inline(latex, size, self.content_w)
+                    box = probe.blank_inline(latex, inline_size, self.content_w)
                 formula_widths[latex] = box.width
             return formula_widths[latex]
 
@@ -1303,7 +1322,7 @@ class ReportRenderer:
         vertical_spans.extend([1] * (len(widths) - len(vertical_spans)))
         y0 = self.y
         y1 = self.y + height
-        ink = color(self.config.handwriting.ink_color, 200 if header else 170)
+        ink = color(self.config.handwriting.ink_color, 255 if self.config.handwriting.uniform_table_ink else (200 if header else 170))
         if draw_top:
             self._rough_line(x_positions[0], y0, x_positions[-1], y0, ink, width=2 if header else 1)
         skipped_bottom = skip_bottom_columns or set()

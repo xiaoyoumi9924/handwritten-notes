@@ -13,6 +13,7 @@ args = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--window
         '--add-data', 'src/markdown_to_handwrite/webui:markdown_to_handwrite/webui',
         '--add-data', 'src/markdown_to_handwrite/assets:markdown_to_handwrite/assets',
         '--add-data', 'font/1_SDT.ttf:font',
+        '--add-data', 'font/PingFangShaoHuaTi-2.ttf:font',
         '--add-data', 'font/Latin-Caveat-Regular.ttf:font',
         '--add-data', 'font/Latin-Kalam-Regular.ttf:font',
         '--add-data', 'font/OFL-Caveat.txt:font',

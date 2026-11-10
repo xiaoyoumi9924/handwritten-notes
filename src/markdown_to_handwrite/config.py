@@ -46,7 +46,13 @@ class HandwritingConfig:
     fallback_font_path: str | None = None  # 首选字体缺字时使用的额外回退字体路径。
     ink_color: str = "#17233b"  # 正文、公式和生成线条共用的墨水颜色。
     body_font_pt: float = 16.0  # 正文字号，单位 pt。
-    math_font_pt: float = 16.0  # 展示公式及行内公式主字符字号，单位 pt。
+    math_font_pt: float = 16.0  # 展示公式主字符字号，单位 pt。
+    math_match_body_ink: bool = False  # 公式笔重与正文笔重匹配。
+    math_wrap_long: bool = False  # 长独立公式在顶层运算符处换行。
+    math_character_rotation_deg: float = 0.0  # 公式字符额外旋转的标准差（度）。
+    math_display_left_aligned: bool = False  # 独立公式靠左并留出缩进。
+    math_inline_scale: float = 1.0  # 行内公式相对于所在文字的字号倍率。
+    math_stroke_weight_scale: float = 1.0  # 公式字符和线条的笔画粗细倍率。
     code_font_pt: float = 11.5  # 代码块字号，单位 pt。
     h1_font_pt: float = 22.0  # 一级标题字号，单位 pt；不会额外加粗。
     h2_font_pt: float = 17.0  # 二级标题字号，单位 pt；不会额外加粗。
@@ -85,6 +91,8 @@ class HandwritingConfig:
     math_rule_jitter_ratio: float = 0.050  # 公式线和表格线的细小路径抖动幅度，单位 em。
     position_disorder: float = 10.0  # 正文字位随机变化强度，单位百分比。
     preserve_chinese_punctuation: bool = False  # 保留中文标点的形状。
+    uniform_table_ink: bool = False  # 表格线与正文使用相同的不透明度。
+    legible_decimal_point: bool = False  # 强化数字中的小数点。
     handwritten_digit_one: bool = False  # 正文和公式使用手写数字 1。
     handwritten_punctuation: bool = False  # 为中文句号和顿号使用手写笔画。
     handwritten_quotes: bool = False  # 中文双引号使用适配笔画。

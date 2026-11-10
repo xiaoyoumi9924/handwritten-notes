@@ -209,7 +209,7 @@ class HandwritingEngine:
                 return_baseline=True,
                 corrections=corrections,
             )
-        elif self.handright_available and not (corrections and (self.config.correction_probability > 0 or self.config.position_disorder > 0)):
+        elif self.handright_available and not (self.config.handwritten_digit_one or self.config.handwritten_punctuation or self.config.uniform_ink_enabled) and not (corrections and (self.config.correction_probability > 0 or self.config.position_disorder > 0)):
             try:
                 image = self._render_with_handright(text, size_px, max_width, seed, math=math)
             except Exception:
@@ -350,7 +350,7 @@ class HandwritingEngine:
                 else self.reference_stroke_weight
             )
         base_scale = max(0.25, min(3.0, self.config.stroke_weight_base_scale))
-        reference_weight *= base_scale
+        reference_weight *= base_scale * (max(0.5, min(2.0, self.config.math_stroke_weight_scale)) if math_mode else 1.0)
         if optical_weight <= 0 or reference_weight <= 0:
             return 0.0
         return _solve_stroke_weight_adjustment(
@@ -361,6 +361,8 @@ class HandwritingEngine:
 
     def _reference_weight_for_text(self, text: str, size_px: int, math_mode: bool = False) -> float:
         """Measure the same glyph mix at the configured reference size."""
+        if math_mode and self.config.math_match_body_ink:
+            return self.reference_stroke_weight
         runs = self._font_runs(text, size_px, math=math_mode)
         reference_size = self.math_reference_size_px if math_mode else self.reference_size_px
         fallback_sample = MATH_STROKE_WEIGHT_SAMPLE if math_mode else TEXT_STROKE_WEIGHT_SAMPLE
@@ -427,7 +429,8 @@ class HandwritingEngine:
 
     def _glyph_rotation_sigma_degrees(self, math_mode: bool = False) -> float:
         scale = self._math_jitter_scale() if math_mode else 1.0
-        return max(0.0, math.degrees(self.config.perturb_theta_sigma) * scale)
+        base = max(0.0, math.degrees(self.config.perturb_theta_sigma) * scale)
+        return math.hypot(base, max(0.0, min(4.0, self.config.math_character_rotation_deg))) if math_mode else base
 
     def _glyph_position_sigma(
         self,
@@ -820,7 +823,38 @@ class HandwritingEngine:
             glyph = Image.new("RGBA", (char_w + 2 * pad, line_height), (0, 0, 0, 0))
             glyph_draw = ImageDraw.Draw(glyph)
             glyph_y = baseline - font.getmetrics()[0] + self._glyph_vertical_adjustment(char, size_px)
-            glyph_draw.text((pad, glyph_y), char, fill=self.ink, font=font)
+            if char == "1" and self.config.handwritten_digit_one:
+                # A single vertical pen stroke, aligned with the original digit's
+                # cap height and baseline in both ordinary text and formulas.
+                center_x = pad + (bbox[0] + bbox[2]) / 2
+                top = glyph_y + bbox[1]
+                bottom = glyph_y + bbox[3] - 1
+                pen = max(1, round(_font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE)))
+                glyph_draw.line((center_x, top, center_x, bottom), fill=self.ink, width=pen)
+            elif char == "." and self.config.legible_decimal_point:
+                pen = max(2, round(_font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE) * 1.3))
+                center_x = pad + (bbox[0] + bbox[2]) / 2
+                center_y = glyph_y + bbox[3] - pen / 2
+                glyph_draw.ellipse((center_x - pen / 2, center_y - pen / 2,
+                                    center_x + pen / 2, center_y + pen / 2), fill=self.ink)
+            elif self.config.handwritten_punctuation and not math and char in "。、":
+                pen = max(1, round(_font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE)))
+                left = pad + round(size_px * 0.08)
+                bottom = baseline - round(size_px * 0.03)
+                side = max(3, round(size_px * 0.13))
+                if char == "。":
+                    glyph_draw.ellipse((left, bottom - side, left + side, bottom), outline=self.ink, width=pen)
+                else:
+                    glyph_draw.line((left, bottom - side, left + side, bottom), fill=self.ink, width=pen)
+            else:
+                glyph_draw.text((pad, glyph_y), char, fill=self.ink, font=font)
+                if self.config.uniform_ink_enabled and _is_latin_text_character(char) and char.isalnum():
+                    # Match Latin letters and digits to the body font, without
+                    # flattening the expressive variation of Chinese strokes.
+                    alpha = glyph.getchannel("A")
+                    target = _font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE)
+                    adjustment = _solve_stroke_weight_adjustment(alpha, target, MAX_STROKE_WEIGHT_ADJUSTMENT_PX)
+                    glyph.putalpha(_adjust_stroke_weight(alpha, adjustment))
             glyph, shear_pad = self._correct_latin_slant(
                 glyph,
                 char,
@@ -924,6 +958,8 @@ class HandwritingEngine:
         correction = self.config.latin_upright_correction_deg
         if (
             math_mode
+            or (char == "1" and self.config.handwritten_digit_one)
+            or (char == "." and self.config.legible_decimal_point)
             or not self.latin_font_path
             or font_path != self.latin_font_path
             or not _is_latin_text_character(char)

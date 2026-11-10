@@ -27,6 +27,25 @@ class WebConfigTests(unittest.TestCase):
         self.assertIn('localStorage.setItem(DRAFT_STORAGE_KEY', script)
         self.assertIn("handwritten-page-${state.page + 1}.png", script)
 
+    @unittest.skipUnless((Path(__file__).resolve().parents[1] / "font/AnJingChenYingBiXingShu-2.ttf").is_file(), "Optional locally supplied font is not distributed")
+    def test_anjingchen_preset_selects_font_and_restores_other_presets(self):
+        presets = build_bootstrap()["presets"]
+        font = presets["anjingchen"]
+        self.assertEqual(font["handwriting.font_path"], "font/AnJingChenYingBiXingShu-2.ttf")
+        self.assertFalse(font["handwriting.sdt_trajectory_enabled"])
+        self.assertEqual(font["handwriting.latin_font_path"], "font/Latin-Caveat-Regular.ttf")
+        self.assertEqual(font["handwriting.correction_probability"], 0)
+        self.assertTrue(font["handwriting.handwritten_digit_one"])
+        self.assertTrue(font["handwriting.handwritten_punctuation"])
+        self.assertTrue(font["handwriting.preserve_chinese_punctuation"])
+        for name in ("formal", "personal_v6"):
+            if name in presets:
+                for key in ("font_path", "latin_font_path", "math_font_path", "fallback_font_path",
+                            "sdt_trajectory_enabled", "sdt_trajectory_path", "reference_glyph_path",
+                            "uniform_ink_enabled", "correction_probability", "handwritten_digit_one",
+                            "handwritten_punctuation", "preserve_chinese_punctuation"):
+                    self.assertIn(f"handwriting.{key}", presets[name])
+
     def test_bootstrap_exposes_base_weight_slider(self):
         bootstrap = build_bootstrap()
         field = next(

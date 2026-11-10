@@ -573,6 +573,36 @@ def _split_top_level_display_spacing(latex: str) -> list[str]:
     return parts
 
 
+def _split_display_operators(latex: str) -> list[str]:
+    """Split only at binary operators at the outermost grouping level."""
+    parts = []
+    start = index = depth = brackets = 0
+    while index < len(latex):
+        char = latex[index]
+        if char == "\\":
+            match = re.match(r"\\([A-Za-z]+|.)", latex[index:])
+            index += len(match.group(0)) if match else 1
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth = max(0, depth - 1)
+        elif char in "([":
+            brackets += 1
+        elif char in ")]":
+            brackets = max(0, brackets - 1)
+        elif char in "=+-" and depth == 0 and brackets == 0:
+            previous = latex[start:index].rstrip()
+            if previous and previous[-1] not in "=+-^_":
+                parts.append(previous)
+                start = index
+        index += 1
+    tail = latex[start:].strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
 class FormulaRenderer:
     """Two-dimensional math compositor inspired by hfmath's box-layout pipeline."""
 
@@ -596,6 +626,22 @@ class FormulaRenderer:
                 LatexMathParser(line).parse(), size_px, line_seed, display_style=True,
             )
             segments = _split_top_level_display_spacing(line) if box.width > max_width else [line]
+            if box.width > max_width and len(segments) == 1 and self.engine.config.math_wrap_long:
+                pieces = _split_display_operators(line)
+                if len(pieces) > 1:
+                    segments = []
+                    current = pieces[0]
+                    for piece in pieces[1:]:
+                        candidate = current + piece
+                        candidate_box = self._layout_with_weight_group(
+                            LatexMathParser(candidate).parse(), size_px, f"{line_seed}:measure", display_style=True,
+                        )
+                        if candidate_box.width > max_width:
+                            segments.append(current)
+                            current = piece
+                        else:
+                            current = candidate
+                    segments.append(current)
             if len(segments) > 1:
                 for segment_index, segment in enumerate(segments):
                     part = self._layout_with_weight_group(
@@ -613,7 +659,8 @@ class FormulaRenderer:
         image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         y = 0
         for box in line_boxes:
-            image.alpha_composite(box.image, ((width - box.width) // 2, y))
+            x = 0 if self.engine.config.math_display_left_aligned else (width - box.width) // 2
+            image.alpha_composite(box.image, (x, y))
             y += box.height + gap
         if image.width > max_width:
             scale = max_width / image.width
@@ -1466,7 +1513,9 @@ class FormulaRenderer:
     def _stroke_width(self, size_px: int) -> float:
         if self.engine.uses_sdt_trajectories:
             return self.engine.uniform_pen_width_px()
-        return max(1, round(size_px * 0.024))
+        if self.engine.config.math_match_body_ink:
+            return max(1.0, self.engine.reference_stroke_weight * max(0.5, min(2.0, self.engine.config.math_stroke_weight_scale)))
+        return max(1, round(size_px * 0.024)) * max(0.5, min(2.0, self.engine.config.math_stroke_weight_scale))
 
     def _rule_curve(
         self,

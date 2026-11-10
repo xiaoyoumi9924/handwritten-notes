@@ -2,7 +2,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const DRAFT_STORAGE_KEY = "markdown-to-handwrite-draft-v1";
 const SCAN_SESSION_KEY = "markdown-to-handwrite-scan-session-v1";
-const PRESET_NAMES = { formal: "纸间清风体", personal_v6: "游丝细行体" };
+const PRESET_NAMES = { formal: "纸间清风体", personal_v6: "游丝细行体", anjingchen: "行云映墨体", shaohua: "平方韶华体" };
 const SAMPLE_PAGE_COUNT = 3;
 const MAX_SCAN_FILE_BYTES = 18 * 1024 * 1024;
 const RED_LINED_PAPER = "background/提取的红线纸.png";
@@ -109,6 +109,7 @@ function persistDraft() {
       config: state.config,
       preset: state.selectedPreset,
       presetVersion: 2,
+      anjingchenFormulaVersion: 3,
       paperLayoutVersion: state.paperLayoutVersion,
       savedAt: Date.now(),
     }));
@@ -543,7 +544,7 @@ function markChanged() {
 
 function updateStyleSelection() {
   $("#font-preset").value = state.selectedPreset || "custom";
-  $(".preset-monogram").textContent = state.selectedPreset === "personal_v6" ? "游" : "纸";
+  $(".preset-monogram").textContent = ({ personal_v6: "游", anjingchen: "行", shaohua: "韶" })[state.selectedPreset] || "纸";
   $("#font-preset-name").textContent = PRESET_NAMES[state.selectedPreset] || "自定义笔迹";
   $$('[data-font-option]').forEach((option) => option.setAttribute("aria-selected", String(option.dataset.fontOption === state.selectedPreset)));
   $$("[data-preset]").forEach((button) => {
@@ -2370,6 +2371,28 @@ async function initialize() {
     const draft = readDraft();
     state.defaults = bootstrap.config;
     state.config = draft?.config ? mergeDeep(clone(bootstrap.config), draft.config) : clone(bootstrap.config);
+    // Upgrade the old untouched formula defaults without overwriting custom sizes.
+    if (draft?.preset === "anjingchen" && (draft.anjingchenFormulaVersion || 0) < 3 && bootstrap.presets.anjingchen) {
+      const target = bootstrap.presets.anjingchen;
+      const handwriting = state.config.handwriting;
+      const previous = { math_font_pt: [16, 18], math_inline_scale: [1, 1.15],
+        math_stroke_weight_scale: [1, 1.35, 1.25, 0.8], math_jitter_scale: [0.08, 0.22],
+        math_font_path: [null], math_match_body_ink: [false], math_wrap_long: [false], math_character_rotation_deg: [0] };
+      for (const [key, values] of Object.entries(previous)) {
+        if (values.includes(handwriting[key])) handwriting[key] = target[`handwriting.${key}`];
+      }
+      handwriting.math_display_left_aligned = target["handwriting.math_display_left_aligned"];
+    }
+    if (draft?.preset === "shaohua" && (draft.shaohuaInkVersion || 0) < 2 && bootstrap.presets.shaohua) {
+      const target = bootstrap.presets.shaohua;
+      const handwriting = state.config.handwriting;
+      const previous = { handwritten_digit_one: [false], uniform_table_ink: [false], legible_decimal_point: [false],
+        ink_density_jitter: [0.025], dry_brush_probability: [0.01],
+        stroke_weight_variation_sigma_ratio: [0.0035] };
+      for (const [key, values] of Object.entries(previous)) {
+        if (values.includes(handwriting[key])) handwriting[key] = target[`handwriting.${key}`];
+      }
+    }
     // Migrate only the previous preset's untouched spacing defaults.
     const migrateFontSpacing = draft?.preset === "personal_v6" && !draft.presetVersion &&
         state.config.handwriting.body_font_pt === 16 && state.config.handwriting.word_spacing_px === 2;
@@ -2398,6 +2421,10 @@ async function initialize() {
     state.assets = bootstrap.assets;
     $("#font-preset option[value=personal_v6]").disabled = !Object.hasOwn(state.presets, "personal_v6");
     $("[data-font-option=personal_v6]").disabled = !Object.hasOwn(state.presets, "personal_v6");
+    $("#font-preset option[value=anjingchen]").disabled = !Object.hasOwn(state.presets, "anjingchen");
+    $("[data-font-option=anjingchen]").disabled = !Object.hasOwn(state.presets, "anjingchen");
+    $("#font-preset option[value=shaohua]").disabled = !Object.hasOwn(state.presets, "shaohua");
+    $("[data-font-option=shaohua]").disabled = !Object.hasOwn(state.presets, "shaohua");
     if (!draft?.config) applyPreset("formal", false, false);
     else {
       state.selectedPreset = Object.hasOwn(state.presets, draft.preset) ? draft.preset : null;
