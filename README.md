@@ -61,10 +61,8 @@ irm https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/
 想让生成的字更接近自己的笔迹？项目提供基于 [SDT](https://github.com/dailenson/SDT) 的个性化笔迹研究工具：收集并整理手写样本后，可使用 SDT 模型生成笔画轨迹，检查效果并探索制作自己的笔迹风格。
 
 1. 准备清晰、无水印的手写样本，并整理成单字参考图。
-2. 从 [SDT 项目](https://github.com/dailenson/SDT)获取源码并放到 `references/SDT/`，按其说明准备独立环境、数据和预训练权重；本仓库不包含这些源码、数据和权重。
+2. 从 [SDT 项目](https://github.com/dailenson/SDT)获取源码，按其说明准备独立环境、数据和预训练权重；本仓库不包含这些源码、数据和权重。
 3. 参考[笔迹研究记录](training/new_chinese_handwriting/README.md)运行样本处理和轨迹生成脚本，再检查生成字形的可读性。
-
-
 
 ## 许可
 
