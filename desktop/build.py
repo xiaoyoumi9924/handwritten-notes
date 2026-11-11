@@ -12,6 +12,8 @@ args = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--window
         '--collect-all', 'webview', '--collect-all', 'pillow_heif',
         '--add-data', 'src/markdown_to_handwrite/webui:markdown_to_handwrite/webui',
         '--add-data', 'src/markdown_to_handwrite/assets:markdown_to_handwrite/assets',
+        '--add-data', 'background/提取的红线纸.png:background',
+        '--add-data', 'background/提取的绿线纸.png:background',
         '--add-data', 'font/1_SDT.ttf:font',
         '--add-data', 'font/AnJingChenYingBiXingShu-2.ttf:font',
         '--add-data', 'font/PingFangShaoHuaTi-2.ttf:font',
