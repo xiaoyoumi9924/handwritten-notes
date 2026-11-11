@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 from PIL import Image, ImageDraw
-from markdown_to_handwrite.scanner import ScanService, decode_scan_image
+import numpy as np
+from markdown_to_handwrite.scanner import ScanService, decode_scan_image, _rectify
 
 
 class ScanFormatTests(unittest.TestCase):
@@ -36,6 +37,17 @@ class ScanFormatTests(unittest.TestCase):
         self.assertEqual(decoded.size, (60, 120))
         self.assertLess(decoded.getpixel((45, 15))[0], 30)
         self.assertGreater(decoded.getpixel((15, 105))[0], 220)
+
+    def test_high_resolution_image_is_not_silently_downscaled(self):
+        image = Image.new('RGB', (9001, 100), 'white')
+        image.putpixel((9000, 50), (0, 0, 0))
+        stream = io.BytesIO()
+        image.save(stream, format='PNG')
+        decoded = decode_scan_image(stream.getvalue())
+        self.assertEqual(decoded.size, image.size)
+        self.assertEqual(decoded.getpixel((9000, 50)), (0, 0, 0))
+        corrected = _rectify(np.asarray(decoded), [[0, 0], [1, 0], [1, 1], [0, 1]])
+        self.assertEqual(corrected.shape[:2], (100, 9001))
 
     def test_invalid_heic_gives_clear_error(self):
         with tempfile.TemporaryDirectory() as folder:

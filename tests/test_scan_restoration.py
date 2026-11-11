@@ -13,13 +13,10 @@ from markdown_to_handwrite.scan_restoration import normalize_scan_edits, restore
 
 
 class ScanRestorationTests(unittest.TestCase):
-    @unittest.skipUnless(Path('/System/Library/Fonts/Supplemental/Songti.ttc').is_file(), 'macOS Songti font required')
-    def test_scan_comment_uses_regular_song_type_in_export(self):
+    def test_scan_comment_uses_bundled_plain_font_in_export(self):
         image = Image.new('RGB', (500, 300), 'white')
-        comment = {'kind': 'comment', 'text': '宋体批注', 'color': '#183865', 'width': .04, 'points': [[.1,.1]]}
-        with patch('markdown_to_handwrite.scan_restoration.ImageFont.truetype', wraps=ImageFont.truetype) as load:
-            result = draw_scan_marks(image, [comment])
-        self.assertEqual(load.call_args.kwargs['index'], 4)
+        comment = {'kind': 'comment', 'text': '普通批注', 'color': '#183865', 'width': .04, 'points': [[.1, .1]]}
+        result = draw_scan_marks(image, [comment])
         self.assertTrue(np.any(np.asarray(result) != 255))
 
     def test_rejects_out_of_bounds_nonfinite_and_excessive_regions(self):

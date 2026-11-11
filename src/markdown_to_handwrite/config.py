@@ -5,7 +5,7 @@ import math
 from copy import deepcopy
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args, get_type_hints
 
 from PIL import ImageColor
 
@@ -93,6 +93,7 @@ class HandwritingConfig:
     preserve_chinese_punctuation: bool = False  # 保留中文标点的形状。
     uniform_table_ink: bool = False  # 表格线与正文使用相同的不透明度。
     legible_decimal_point: bool = False  # 强化数字中的小数点。
+    latin_word_corrections: bool = False  # 按英文单词生成勾画与重写。
     handwritten_digit_one: bool = False  # 正文和公式使用手写数字 1。
     handwritten_punctuation: bool = False  # 为中文句号和顿号使用手写笔画。
     handwritten_quotes: bool = False  # 中文双引号使用适配笔画。
@@ -194,13 +195,33 @@ def _migrate_config(data: dict[str, Any]) -> dict[str, Any]:
 
 def _update_dataclass(target: Any, data: dict[str, Any]) -> None:
     known_fields = {field.name for field in fields(target)}
+    types = get_type_hints(type(target))
     for key, value in data.items():
         if key not in known_fields:
             raise ValueError(f"Unknown config field: {key}")
         current = getattr(target, key)
-        if is_dataclass(current) and isinstance(value, dict):
+        if is_dataclass(current):
+            if not isinstance(value, dict):
+                raise ValueError(f"参数 {key} 必须是对象。")
             _update_dataclass(current, value)
         else:
+            annotation = types[key]
+            choices = get_args(annotation) or (annotation,)
+            valid = any(
+                (choice is type(None) and value is None)
+                or (choice is bool and type(value) is bool)
+                or (choice is int and type(value) is int)
+                or (choice is float and type(value) in (int, float) and math.isfinite(value))
+                or (choice is str and isinstance(value, str))
+                for choice in choices
+            )
+            if not valid:
+                if choices == (bool,):
+                    raise ValueError(f"参数 {key} 必须是布尔值。")
+                labels = {"word_spacing_px": "字符间距", "advance_jitter_sigma_ratio": "字距随机扰动"}
+                if key in labels:
+                    raise ValueError(f"{labels[key]}必须是有限数值。")
+                raise ValueError(f"参数 {key} 的类型或数值无效。")
             setattr(target, key, value)
 
 

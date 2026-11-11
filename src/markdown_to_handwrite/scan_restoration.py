@@ -2,42 +2,14 @@
 import math
 from typing import Any
 
-from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
 from .page_edits import normalize_page_edits, _draw_marks
 
 
 def draw_scan_marks(page: Image.Image, marks: list[dict]) -> Image.Image:
-    """Draw scan annotations in Song type; other tools retain their styling."""
-    result = page
-    for mark in marks:
-        if mark['kind'] != 'comment':
-            result = _draw_marks(result, [mark])
-            continue
-        candidates = ['/System/Library/Fonts/Supplemental/Songti.ttc',
-                      'C:/Windows/Fonts/simsun.ttc',
-                      '/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc']
-        font_path = next((p for p in candidates if Path(p).is_file()), None)
-        if not font_path:
-            raise ValueError('未找到宋体或思源宋体，无法导出扫描批注。')
-        size = max(12, round(mark['width'] * result.width))
-        # macOS Songti.ttc starts with Black, not Regular.
-        font = ImageFont.truetype(font_path, size, index=4 if font_path.endswith('/Songti.ttc') else 0)
-        result = result.copy()
-        draw = ImageDraw.Draw(result)
-        x = round(mark['points'][0][0] * (result.width - 1))
-        y = round(mark['points'][0][1] * (result.height - 1))
-        max_width = min(round(result.width * .48), result.width-x)
-        line = ''
-        for char in mark['text'] + '\n':
-            if char == '\n' or (line and draw.textlength(line+char, font=font) > max_width):
-                draw.text((x,y), line, font=font, fill=mark['color'], anchor='lt')
-                y += round(size*1.22)
-                line = ''
-            if char != '\n':
-                line += char
-    return result
+    """Apply the same ordinary text and annotation styling to scanned pages."""
+    return _draw_marks(page, marks)
 
 
 def normalize_scan_edits(value: Any, page_count: int) -> list[dict]:

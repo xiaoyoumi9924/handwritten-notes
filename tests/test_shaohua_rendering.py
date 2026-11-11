@@ -45,3 +45,19 @@ def test_shaohua_font_is_in_deployment_tree():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     assert (root / 'font/PingFangShaoHuaTi-2.ttf').is_file()
+
+
+def test_table_rules_use_opaque_ink_and_scale_with_resolution():
+    from unittest.mock import patch
+
+    preset = build_bootstrap()['presets']['shaohua']
+    values = {key.split('.', 1)[1]: value for key, value in preset.items()}
+    for dpi in (150, 300):
+        config = config_from_dict({'handwriting': values})
+        config.page.dpi = dpi
+        config.background.auto_discover = False
+        report = ReportRenderer(config)
+        with patch.object(report, '_rough_line') as draw:
+            report._draw_table_row([100, 100], ([[], []], 60), 0, header=False)
+        assert all(call.args[4][3] == 255 for call in draw.call_args_list)
+        assert all(call.kwargs['width'] == max(1.0, round(config.handwriting.body_font_pt * dpi / 72) * .0675) for call in draw.call_args_list)

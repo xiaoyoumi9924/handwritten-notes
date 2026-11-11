@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import shutil
 import zipfile
 from pathlib import Path
 from typing import Sequence
@@ -13,7 +14,7 @@ def export_pages_as_docx(
     output_path: str | Path,
     page_width_mm: float,
     page_height_mm: float,
-    *, page_pngs: Sequence[bytes] | None = None,
+    *, page_pngs: Sequence[bytes] | None = None, page_png_archive: str | Path | None = None,
 ) -> Path:
     """Save rendered pages as full-page images in a Word document."""
     if not pages:
@@ -26,18 +27,14 @@ def export_pages_as_docx(
     width_twips = round(page_width_mm * 1_440 / 25.4)
     height_twips = round(page_height_mm * 1_440 / 25.4)
 
-    images = list(page_pngs) if page_pngs is not None else []
-    if page_pngs is None:
-        for page in pages:
-            image = io.BytesIO()
-            page.convert("RGB").save(image, format="PNG", compress_level=3)
-            images.append(image.getvalue())
-    if len(images) != len(pages):
+    if page_pngs is not None and page_png_archive is not None:
+        raise ValueError("只能指定一种页面图片来源。")
+    if page_pngs is not None and len(page_pngs) != len(pages):
         raise ValueError("页面图片数量不一致。")
 
     paragraphs = []
     relationships = []
-    for index in range(1, len(images) + 1):
+    for index in range(1, len(pages) + 1):
         page_break = '<w:pageBreakBefore/>' if index > 1 else ""
         rel_id = f"rId{index}"
         paragraphs.append(
@@ -91,6 +88,20 @@ def export_pages_as_docx(
         package.writestr("_rels/.rels", root_relationship)
         package.writestr("word/document.xml", document)
         package.writestr("word/_rels/document.xml.rels", document_relationships)
-        for index, image in enumerate(images, start=1):
-            package.writestr(f"word/media/page-{index}.png", image, compress_type=zipfile.ZIP_STORED)
+        if page_png_archive is not None:
+            with zipfile.ZipFile(page_png_archive) as source:
+                for index in range(1, len(pages) + 1):
+                    with source.open(f"handwritten-page-{index:03d}.png") as image, package.open(
+                        zipfile.ZipInfo(f"word/media/page-{index}.png"), "w"
+                    ) as target:
+                        shutil.copyfileobj(image, target, length=1024 * 1024)
+        else:
+            for index, page in enumerate(pages, start=1):
+                if page_pngs is None:
+                    image = io.BytesIO()
+                    page.convert("RGB").save(image, format="PNG", compress_level=3)
+                    data = image.getvalue()
+                else:
+                    data = page_pngs[index - 1]
+                package.writestr(f"word/media/page-{index}.png", data, compress_type=zipfile.ZIP_STORED)
     return output

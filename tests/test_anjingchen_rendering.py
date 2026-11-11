@@ -65,3 +65,21 @@ def test_math_ink_uses_body_pen_weight():
     assert engine.config.math_match_body_ink
     assert engine._reference_weight_for_text("x+2", 80, math_mode=True) == engine.reference_stroke_weight
     assert FormulaRenderer(engine)._stroke_width(80) == max(1.0, engine.reference_stroke_weight)
+
+
+def test_table_rules_match_body_ink_and_scale_with_resolution():
+    from unittest.mock import patch
+    from markdown_to_handwrite.renderer import ReportRenderer
+
+    preset = build_bootstrap()["presets"]["anjingchen"]
+    values = {key.split('.', 1)[1]: value for key, value in preset.items()}
+    assert values["uniform_table_ink"]
+    for dpi in (150, 300):
+        config = config_from_dict({"handwriting": values})
+        config.page.dpi = dpi
+        config.background.auto_discover = False
+        renderer = ReportRenderer(config)
+        with patch.object(renderer, "_rough_line") as draw:
+            renderer._draw_table_row([100, 100], ([[], []], 60), 0, header=False)
+        assert all(call.args[4][3] == 255 for call in draw.call_args_list)
+        assert all(call.kwargs["width"] == max(1.0, round(config.handwriting.body_font_pt * dpi / 72) * .0675) for call in draw.call_args_list)

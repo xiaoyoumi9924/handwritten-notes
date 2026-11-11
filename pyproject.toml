@@ -31,4 +31,4 @@ scan-ai = ["torch>=2.6,<3"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-markdown_to_handwrite = ["webui/*.html", "webui/*.css", "webui/*.js", "webui/*.png", "assets/*.zip", "vendor/LICENSE-*.txt"]
+markdown_to_handwrite = ["webui/*.html", "webui/*.css", "webui/*.js", "webui/*.png", "assets/*.zip", "assets/*.ttf", "assets/OFL-*.txt", "vendor/LICENSE-*.txt"]

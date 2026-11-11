@@ -1,4 +1,3 @@
-@font-face { font-family: "PaperHandwriting"; src: url("/handwriting-font.ttf") format("truetype"); font-display: swap; }
 :root {
   --sidebar-width: 234px;
   --page-top: 30px;
@@ -386,7 +385,7 @@ body[data-theme="dark"] .canvas-viewport { background: #27344c; }
 #edit-layer.is-editing { pointer-events: auto; cursor: crosshair; }
 #edit-layer.is-saving { cursor: progress; }
 .comment-layer { position: absolute; inset: 0; z-index: 3; overflow: hidden; pointer-events: none; }
-.comment-mark { position: absolute; max-width: 48%; margin: 0; padding: 0; color: var(--ink); background: transparent; border: 0; border-radius: 0; box-shadow: none; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; font-family: "PaperHandwriting", "KaiTi", serif; line-height: 1.22; cursor: grab; pointer-events: auto; touch-action: none; user-select: none; }
+.comment-mark { position: absolute; max-width: 48%; margin: 0; padding: 0; color: var(--ink); background: transparent; border: 0; border-radius: 0; box-shadow: none; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif; line-height: 1.22; cursor: grab; pointer-events: auto; touch-action: none; user-select: none; }
 .comment-mark img { display: block; width: 100%; height: 100%; pointer-events: none; }
 .comment-layer.is-saving .comment-mark { pointer-events: none; }
 .comment-layer:not(.comment-mode) .comment-mark { pointer-events: none; }
@@ -803,7 +802,7 @@ body[data-paper-style="lined"] .paper-margin { display: block; position: absolut
 .scan-session-actions, .scan-session-actions button { font-size:14px; }
 .scan-zoom-label { margin-left:auto; margin-right:12px; font-size:13px; color:#52698d; font-variant-numeric:tabular-nums; }
 #scan-comment-text { width:100%; min-height:76px; resize:vertical; padding:8px 9px; color:var(--ink); background:var(--panel-soft); border:1px solid var(--line-strong); border-radius:8px; font:14px/1.5 STSong, "Songti SC", SimSun, serif; }
-#scan-comment-layer .comment-mark { font-family:STSong, "Songti SC", SimSun, serif; line-height:1.22; }
+#scan-comment-layer .comment-mark { line-height:1.3; }
 #scan-comment-editor { width:min(240px,70%); }
 #scan-comment-editor .comment-editor-actions button { white-space:nowrap; }
 .scan-session-actions button svg { display:none; }

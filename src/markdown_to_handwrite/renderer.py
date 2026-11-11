@@ -33,6 +33,7 @@ from .markdown_parser import (
     TableBlock,
 )
 from .typography import westernize_punctuation
+from .page_store import DiskPages
 
 PROJECT_ROOT = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[2]
 BACKGROUND_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp"}
@@ -53,8 +54,10 @@ class ReportRenderer:
     def _punctuation(self, text: str) -> str:
         return text if self.config.handwriting.preserve_chinese_punctuation else westernize_punctuation(text)
 
-    def __init__(self, config: ReportConfig, base_dir: str | Path = "."):
+    def __init__(self, config: ReportConfig, base_dir: str | Path = ".", *, max_total_pixels: int | None = None,
+                 page_store_dir: Path | None = None):
         self.config = config
+        self.max_total_pixels = max_total_pixels
         self.base_dir = Path(base_dir)
         self.dpi = config.page.dpi
         self.page_w = mm_to_px(config.page.width_mm, self.dpi)
@@ -76,7 +79,7 @@ class ReportRenderer:
             math_reference_size_px=pt_to_px(config.handwriting.math_font_pt, self.dpi),
         )
         self.formula_renderer = FormulaRenderer(self.engine, seed=config.handwriting.seed)
-        self.pages: list[Image.Image] = []
+        self.pages = DiskPages(page_store_dir) if page_store_dir is not None else []
         self._page_rules: list[list[int]] = []
         self._pending_corrections: list[tuple[int, dict]] = []
         self._placed_corrections: list[dict] = []
@@ -172,15 +175,24 @@ class ReportRenderer:
             elif isinstance(block, RuleBlock):
                 self._draw_rule()
         if self.config.layout.show_page_numbers:
+            if isinstance(self.pages, DiskPages):
+                self.pages.spill()
             self._draw_footers()
+        elif isinstance(self.pages, DiskPages):
+            self.pages.spill()
         self._draw_pending_corrections()
         return self.pages
 
-    def save_pdf(self, output_path: str | Path) -> Path:
+    def save_pdf(self, output_path: str | Path, *, page_png_archive: str | Path | None = None) -> Path:
         from .page_edits import save_pages_pdf
-        return save_pages_pdf(self.pages, output_path, self.config.page.width_mm, self.config.page.height_mm)
+        return save_pages_pdf(self.pages, output_path, self.config.page.width_mm, self.config.page.height_mm,
+                              page_png_archive=page_png_archive)
 
     def _new_page(self) -> None:
+        if self.max_total_pixels is not None and (len(self.pages) + 1) * self.page_w * self.page_h > self.max_total_pixels:
+            raise ValueError("文稿页数或分辨率过大，请分段生成或降低 DPI。")
+        if isinstance(self.pages, DiskPages):
+            self.pages.spill()
         self.page = self._make_background()
         self.draw = ImageDraw.Draw(self.page)
         self.pages.append(self.page)
@@ -659,16 +671,35 @@ class ReportRenderer:
                 continue
 
             line_seed = f"{seed_extra}:line:{len(lines)}"
-            line = self._render_rich_items(flatten(selected), size, line_width, normal_line_h, line_seed)
+            items = flatten(selected)
+            tail = ""
+            if len(selected) == 1 and all(kind == "text" for kind, _ in items):
+                text = "".join(str(value) for _, value in items)
+                if len(text) > 32 and self.engine.corrected_line_width(text, size) > line_width:
+                    low, high, cut = 1, len(text) - 1, 0
+                    while low <= high:
+                        middle = (low + high) // 2
+                        if self.engine.corrected_line_width(text[:middle], size) <= line_width:
+                            cut, low = middle, middle + 1
+                        else:
+                            high = middle - 1
+                    cut = max(1, cut)
+                    preferred = cut
+                    while preferred > 0 and starts_with_forbidden_line_punctuation(text[preferred:]):
+                        preferred -= 1
+                    cut = preferred or cut
+                    items, tail = [("text", text[:cut])], text[cut:]
+            line = self._render_rich_items(items, size, line_width, normal_line_h, line_seed)
             # Font overhang, ink perturbations and image padding all contribute
             # to the visible width. Reflow using that width before pasting.
             while line.width > line_width and len(selected) > 1:
                 pending.appendleft(selected.pop())
                 while selected and whitespace(selected[-1]):
                     pending.appendleft(selected.pop())
-                line = self._render_rich_items(flatten(selected), size, line_width, normal_line_h, line_seed)
+                items = flatten(selected)
+                line = self._render_rich_items(items, size, line_width, normal_line_h, line_seed)
             if line.width > line_width and all(kind == "text" for kind, _ in selected[0]):
-                text = "".join(str(value) for _, value in selected[0])
+                text = "".join(str(value) for _, value in items)
                 # An overlong word must be splittable, including its first line.
                 low, high, cut = 1, len(text) - 1, 0
                 while low <= high:
@@ -687,8 +718,11 @@ class ReportRenderer:
                 # unavoidable exception to the usual no-leading-punctuation rule.
                 cut = preferred or cut
                 if cut < len(text):
-                    pending.appendleft([("text", text[cut:])])
+                    pending.appendleft([("text", text[cut:] + tail)])
+                    tail = ""
                     line = self._render_rich_items([("text", text[:cut])], size, line_width, normal_line_h, line_seed)
+            if tail:
+                pending.appendleft([("text", tail)])
             if line.width > line_width:
                 # A single formula or glyph may exceed even an empty line.
                 line = self._fit_rich_line(line, line_width, normal_line_h)
@@ -812,11 +846,17 @@ class ReportRenderer:
         self._pending_corrections.extend((len(self.pages) - 1, mark) for mark in marks)
 
     def _draw_pending_corrections(self) -> None:
+        if not self._pending_corrections:
+            return
         gap = max(2, mm_to_px(.25, self.dpi))
-        for page_index, page in enumerate(self.pages):
-            pending = [mark for index, mark in self._pending_corrections if index == page_index]
+        marks_by_page: dict[int, list[dict]] = {}
+        for index, mark in self._pending_corrections:
+            marks_by_page.setdefault(index, []).append(mark)
+        for page_index in range(len(self.pages)):
+            pending = marks_by_page.get(page_index, [])
             if not pending:
                 continue
+            page = self.pages[page_index]
             background = self._make_background(page_index).convert("RGB")
             difference = ImageChops.difference(page.convert("RGB"), background).convert("L")
             occupied = difference.point(lambda value: 255 if value > 2 else 0)
@@ -874,6 +914,8 @@ class ReportRenderer:
                     self._placed_corrections.append({"page": page_index, "original": (x, y, x + width, y + height),
                                                      "rewrite": box, "seed": mark["seed"], "angle": angle})
                     break
+            if isinstance(self.pages, DiskPages):
+                self.pages.save(page_index, page)
         self._pending_corrections.clear()
 
     def _render_formula_image(self, text: str, seed_extra: str) -> Image.Image:
@@ -991,7 +1033,10 @@ class ReportRenderer:
         y0 = self.y
         x1 = self.margin_left + self.content_w
         y1 = y0 + height
-        self._rough_rect(x0, y0, x1, y1, color(self.config.handwriting.ink_color, 90), width=1)
+        uniform_ink = self.config.handwriting.uniform_table_ink
+        frame_color = color(self.config.handwriting.ink_color, 255 if uniform_ink else 90)
+        frame_width = max(1.0, pt_to_px(self.config.handwriting.body_font_pt, self.dpi) * 0.0675) if uniform_ink else 1
+        self._rough_rect(x0, y0, x1, y1, frame_color, width=frame_width)
         self.y += pad
         for line in lines:
             self._paste_text(line, x0 + pad, self.y, size, self.content_w - 2 * pad)
@@ -1322,25 +1367,29 @@ class ReportRenderer:
         vertical_spans.extend([1] * (len(widths) - len(vertical_spans)))
         y0 = self.y
         y1 = self.y + height
-        ink = color(self.config.handwriting.ink_color, 255 if self.config.handwriting.uniform_table_ink else (200 if header else 170))
+        uniform_ink = self.config.handwriting.uniform_table_ink
+        ink = color(self.config.handwriting.ink_color, 255 if uniform_ink else (200 if header else 170))
+        # A fixed one-pixel rule nearly disappears when a 300 DPI page is
+        # scaled down for preview. Match the rule width to the body font size.
+        line_width = max(1.0, pt_to_px(self.config.handwriting.body_font_pt, self.dpi) * 0.0675) if uniform_ink else 1
         if draw_top:
-            self._rough_line(x_positions[0], y0, x_positions[-1], y0, ink, width=2 if header else 1)
+            self._rough_line(x_positions[0], y0, x_positions[-1], y0, ink, width=line_width if uniform_ink else (2 if header else 1))
         skipped_bottom = skip_bottom_columns or set()
         segment_start = 0
         for boundary in range(len(widths)):
             if boundary in skipped_bottom:
                 if segment_start < boundary:
-                    self._rough_line(x_positions[segment_start], y1, x_positions[boundary], y1, ink, width=1)
+                    self._rough_line(x_positions[segment_start], y1, x_positions[boundary], y1, ink, width=line_width)
                 segment_start = boundary + 1
         if segment_start < len(widths):
-            self._rough_line(x_positions[segment_start], y1, x_positions[-1], y1, ink, width=1)
+            self._rough_line(x_positions[segment_start], y1, x_positions[-1], y1, ink, width=line_width)
         skip_boundaries = set()
         for index, span in enumerate(spans):
             if span > 1:
                 skip_boundaries.update(range(index + 1, min(len(widths), index + span)))
         for boundary, x in enumerate(x_positions):
             if boundary not in skip_boundaries:
-                self._rough_line(x, y0, x, y1, ink, width=1)
+                self._rough_line(x, y0, x, y1, ink, width=line_width)
         for index in range(len(widths)):
             span = spans[index]
             rowspan = vertical_spans[index]
@@ -1411,7 +1460,7 @@ class ReportRenderer:
         measured = self.engine.measure(line, size)
         return measured >= width * 0.78
 
-    def _rough_line(self, x0: int, y0: int, x1: int, y1: int, fill: tuple[int, ...], width: int = 1) -> None:
+    def _rough_line(self, x0: int, y0: int, x1: int, y1: int, fill: tuple[int, ...], width: float = 1) -> None:
         size = pt_to_px(self.config.handwriting.body_font_pt, self.dpi)
         if y0 == y1:
             self.formula_renderer.draw_horizontal_rule(
@@ -1439,7 +1488,7 @@ class ReportRenderer:
             variation_scale=0.7,
         )
 
-    def _rough_rect(self, x0: int, y0: int, x1: int, y1: int, fill: tuple[int, ...], width: int = 1) -> None:
+    def _rough_rect(self, x0: int, y0: int, x1: int, y1: int, fill: tuple[int, ...], width: float = 1) -> None:
         self._rough_line(x0, y0, x1, y0, fill, width)
         self._rough_line(x1, y0, x1, y1, fill, width)
         self._rough_line(x1, y1, x0, y1, fill, width)
@@ -1454,6 +1503,8 @@ class ReportRenderer:
             image = self.engine.render_line(label, size, self.content_w, seed_extra=f"footer-{index}")
             x = (self.page_w - image.width) // 2
             page.alpha_composite(image, (x, footer_y))
+            if isinstance(self.pages, DiskPages):
+                self.pages.save(index - 1, page)
 
 
 def _inline_units(text: str) -> list[str]:

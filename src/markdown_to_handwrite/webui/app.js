@@ -2,13 +2,14 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const DRAFT_STORAGE_KEY = "markdown-to-handwrite-draft-v1";
 const SCAN_SESSION_KEY = "markdown-to-handwrite-scan-session-v1";
-const PRESET_NAMES = { formal: "纸间清风体", personal_v6: "游丝细行体", anjingchen: "行云映墨体", shaohua: "平方韶华体" };
+const PRESET_NAMES = { formal: "纸间清风体", personal_v6: "游丝细行体", anjingchen: "行云映墨体", shaohua: "平方韶华体", caveat: "Caveat", kalam: "Kalam" };
 const SAMPLE_PAGE_COUNT = 3;
 const MAX_SCAN_FILE_BYTES = 18 * 1024 * 1024;
 const RED_LINED_PAPER = "background/提取的红线纸.png";
 const GREEN_LINED_PAPER = "background/提取的绿线纸.png";
 
 const state = {
+  csrfToken: "",
   module: "text",
   defaults: null,
   config: null,
@@ -110,6 +111,10 @@ function persistDraft() {
       preset: state.selectedPreset,
       presetVersion: 2,
       anjingchenFormulaVersion: 3,
+      anjingchenTableInkVersion: 1,
+      caveatTableInkVersion: 1,
+      caveatMathInkVersion: 2,
+      caveatCorrectionVersion: 1,
       paperLayoutVersion: state.paperLayoutVersion,
       savedAt: Date.now(),
     }));
@@ -544,7 +549,7 @@ function markChanged() {
 
 function updateStyleSelection() {
   $("#font-preset").value = state.selectedPreset || "custom";
-  $(".preset-monogram").textContent = ({ personal_v6: "游", anjingchen: "行", shaohua: "韶" })[state.selectedPreset] || "纸";
+  $(".preset-monogram").textContent = ({ personal_v6: "游", anjingchen: "行", shaohua: "韶", caveat: "C", kalam: "K" })[state.selectedPreset] || "纸";
   $("#font-preset-name").textContent = PRESET_NAMES[state.selectedPreset] || "自定义笔迹";
   $$('[data-font-option]').forEach((option) => option.setAttribute("aria-selected", String(option.dataset.fontOption === state.selectedPreset)));
   $$("[data-preset]").forEach((button) => {
@@ -676,7 +681,7 @@ async function renderDocument() {
   try {
     const response = await fetch("/api/render", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Miaobi-Token": state.csrfToken },
       body: JSON.stringify({ markdown, config: state.config }),
     });
     const result = await response.json();
@@ -860,7 +865,7 @@ async function finishCommentDrag(event) {
   state.commentDrag = null;
   drag.comment.classList.remove("dragging");
   if (drag.comment.hasPointerCapture(event.pointerId)) drag.comment.releasePointerCapture(event.pointerId);
-  if (drag.moved) await savePageEdits();
+  if (drag.moved) markLocalCommentEdit();
 }
 
 function setActiveEditTool(tool) {
@@ -973,7 +978,27 @@ async function saveComment() {
     text,
   });
   closeCommentEditor();
-  await savePageEdits();
+  markLocalCommentEdit();
+}
+
+function hasPendingPageEdits() {
+  return JSON.stringify(state.edits) !== JSON.stringify(state.savedEdits);
+}
+
+function markLocalCommentEdit() {
+  // Render text locally; generating all export files on each drag would block editing.
+  state.commentImages[state.page] = {};
+  renderPageComments();
+  updateUndoButton();
+  $("#save-state").textContent = "批注已修改，导出时保存";
+}
+
+function sameNonCommentEdits(first, second) {
+  const withoutComments = (edit) => ({
+    rotation: edit.rotation, crop: edit.crop,
+    marks: edit.marks.filter((mark) => mark.kind !== "comment"),
+  });
+  return JSON.stringify(withoutComments(first)) === JSON.stringify(withoutComments(second));
 }
 
 function fitCommentPoint(point, text, width) {
@@ -1087,11 +1112,17 @@ async function undoPageEdit() {
     showToast("没有可撤销的修改", "当前页的修改记录为空。");
     return;
   }
+  const current = state.edits[state.page];
   state.edits[state.page] = previous;
   drawEditPreview(null);
-  renderPageComments();
-  updateUndoButton();
-  await savePageEdits();
+  if (sameNonCommentEdits(current, previous)) {
+    markLocalCommentEdit();
+  } else {
+    state.commentImages[state.page] = {};
+    renderPageComments();
+    updateUndoButton();
+    await savePageEdits();
+  }
 }
 
 async function resetPageEdits() {
@@ -1117,7 +1148,7 @@ async function savePageEdits() {
   try {
     const response = await fetch("/api/edit", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Miaobi-Token": state.csrfToken },
       body: JSON.stringify({ jobId: state.jobId, edits: snapshot }),
     });
     const result = await response.json();
@@ -1131,12 +1162,10 @@ async function savePageEdits() {
     state.savedEdits = snapshot;
     syncMainExportButton();
     showCurrentPage();
-    showToast("页面已更新", "PDF、Word 和页面图片都包含当前修改。");
+    return true;
   } catch (error) {
-    state.edits = clone(state.savedEdits);
-    state.editHistory[state.page] = [];
-    showCurrentPage();
-    showToast("页面编辑失败", `${error.message || "请重新生成后再试。"} 当前页未保存的修改已撤回。`, true);
+    showToast("保存失败", `${error.message || "请稍后重试。"} 页面修改仍在，请重试导出。`, true);
+    return false;
   } finally {
     state.editing = false;
     if (state.editSaveQueued) {
@@ -1224,7 +1253,7 @@ async function uploadScanFiles(fileList) {
       const data = scanBase64(new Uint8Array(await file.arrayBuffer()));
       const response = await fetch("/api/scan/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Miaobi-Token": state.csrfToken },
         body: JSON.stringify({ filename: file.name, data }),
       });
       const result = await response.json();
@@ -1268,7 +1297,7 @@ async function uploadScanFiles(fileList) {
 async function scanRequest(path, payload) {
   const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Miaobi-Token": state.csrfToken },
     body: JSON.stringify(payload),
   });
   const result = await response.json();
@@ -1875,8 +1904,7 @@ async function saveTextExport() {
     return;
   }
   const format = state.outputFormat;
-  const url = state.files[format];
-  if (!url) {
+  if (!state.files[format]) {
     showToast("导出文件未就绪", "请重新生成手稿后再试。", true);
     return;
   }
@@ -1896,6 +1924,8 @@ async function saveTextExport() {
       types: [{ description: option.description, accept: { [option.mime]: [option.extension] } }],
       excludeAcceptAllOption: true,
     });
+    if (hasPendingPageEdits() && !(await savePageEdits())) return;
+    const url = state.files[format];
     const response = await fetch(url);
     if (!response.ok) throw new Error("无法读取导出文件，请重新生成后再试。");
     const blob = await response.blob();
@@ -1930,6 +1960,7 @@ async function downloadCurrentPng() {
     return;
   }
   try {
+    if (hasPendingPageEdits() && !(await savePageEdits())) return;
     const image = new Image();
     image.src = state.exportPages[state.page] || state.pages[state.page];
     await image.decode();
@@ -2145,7 +2176,7 @@ function bindEvents() {
         }
         const response = await fetch("/api/import-docx", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Miaobi-Token": state.csrfToken },
           body: JSON.stringify({ filename: file.name, data: btoa(binary) }),
         });
         const result = await response.json();
@@ -2227,7 +2258,7 @@ function bindEvents() {
         binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
       }
       const response = await fetch("/api/background/upload", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", "X-Miaobi-Token": state.csrfToken },
         body: JSON.stringify({ data: btoa(binary) }),
       });
       const result = await response.json();
@@ -2368,6 +2399,7 @@ async function initialize() {
     const response = await fetch("/api/bootstrap");
     if (!response.ok) throw new Error("无法读取配置模型");
     const bootstrap = await response.json();
+    state.csrfToken = bootstrap.csrfToken;
     const draft = readDraft();
     state.defaults = bootstrap.config;
     state.config = draft?.config ? mergeDeep(clone(bootstrap.config), draft.config) : clone(bootstrap.config);
@@ -2382,6 +2414,21 @@ async function initialize() {
         if (values.includes(handwriting[key])) handwriting[key] = target[`handwriting.${key}`];
       }
       handwriting.math_display_left_aligned = target["handwriting.math_display_left_aligned"];
+    }
+    if (draft?.preset === "anjingchen" && !draft.anjingchenTableInkVersion && bootstrap.presets.anjingchen) {
+      state.config.handwriting.uniform_table_ink = bootstrap.presets.anjingchen["handwriting.uniform_table_ink"];
+    }
+    if (draft?.preset === "caveat" && !draft.caveatTableInkVersion && bootstrap.presets.caveat) {
+      state.config.handwriting.uniform_table_ink = bootstrap.presets.caveat["handwriting.uniform_table_ink"];
+    }
+    if (draft?.preset === "caveat" && (draft.caveatMathInkVersion || 0) < 2 && bootstrap.presets.caveat) {
+      state.config.handwriting.math_match_body_ink = bootstrap.presets.caveat["handwriting.math_match_body_ink"];
+      if (state.config.handwriting.math_stroke_weight_scale === 1) {
+        state.config.handwriting.math_stroke_weight_scale = bootstrap.presets.caveat["handwriting.math_stroke_weight_scale"];
+      }
+    }
+    if (draft?.preset === "caveat" && !draft.caveatCorrectionVersion && bootstrap.presets.caveat) {
+      state.config.handwriting.latin_word_corrections = bootstrap.presets.caveat["handwriting.latin_word_corrections"];
     }
     if (draft?.preset === "shaohua" && (draft.shaohuaInkVersion || 0) < 2 && bootstrap.presets.shaohua) {
       const target = bootstrap.presets.shaohua;
@@ -2425,6 +2472,10 @@ async function initialize() {
     $("[data-font-option=anjingchen]").disabled = !Object.hasOwn(state.presets, "anjingchen");
     $("#font-preset option[value=shaohua]").disabled = !Object.hasOwn(state.presets, "shaohua");
     $("[data-font-option=shaohua]").disabled = !Object.hasOwn(state.presets, "shaohua");
+    $("#font-preset option[value=caveat]").disabled = !Object.hasOwn(state.presets, "caveat");
+    $("[data-font-option=caveat]").disabled = !Object.hasOwn(state.presets, "caveat");
+    $("#font-preset option[value=kalam]").disabled = !Object.hasOwn(state.presets, "kalam");
+    $("[data-font-option=kalam]").disabled = !Object.hasOwn(state.presets, "kalam");
     if (!draft?.config) applyPreset("formal", false, false);
     else {
       state.selectedPreset = Object.hasOwn(state.presets, draft.preset) ? draft.preset : null;
@@ -2479,7 +2530,7 @@ let historySource = "all", historyPage = 1;
 function readExportRecords() { try { const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); return Array.isArray(data) ? data : []; } catch { return []; } }
 function saveExportRecords(records) { try { localStorage.setItem(HISTORY_KEY, JSON.stringify(records)); } catch { showToast("记录保存失败", "浏览器存储空间不足。", true); } }
 function addExportRecord(record) { const records = readExportRecords(); records.unshift({...record, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, time: Date.now()}); saveExportRecords(records); }
-function escapeHistory(value) { const el = document.createElement("span"); el.textContent = String(value ?? ""); return el.innerHTML; }
+function escapeHistory(value) { const el = document.createElement("span"); el.textContent = String(value ?? ""); return el.innerHTML.replaceAll('"', '&quot;').replaceAll("'", '&#39;'); }
 function historyFormat(name) { const ext = name.split(".").pop().toUpperCase(); return ext === "DOCX" ? "WORD" : ext === "JPEG" ? "JPG" : ext; }
 function renderHistory() {
   const records = readExportRecords();
@@ -2501,3 +2552,10 @@ function initHistory() {
   $("#history-prev").addEventListener("click", () => { historyPage--; renderHistory(); }); $("#history-next").addEventListener("click", () => { historyPage++; renderHistory(); });
   $("#history-rows").addEventListener("click", event => { const button = event.target.closest("[data-delete-history]"); if (!button) return; if (confirm("确定删除这条导出记录？文件本身不会被删除。")) { saveExportRecords(readExportRecords().filter(r => r.id !== button.dataset.deleteHistory)); renderHistory(); } });
 }
+
+window.addEventListener("beforeunload", (event) => {
+  if (state.jobId && hasPendingPageEdits()) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});

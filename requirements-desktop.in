@@ -1,0 +1,8 @@
+-c requirements-ci.lock
+pyinstaller>=6.14,<7
+pywebview>=5.4,<7
+pywebview[qt]>=5.4,<7; sys_platform == "linux"
+PyQtWebEngine; sys_platform == "linux"
+# The newer Qt 6 releases do not provide the Linux wheels needed by CI.
+PyQt6==6.9.1; sys_platform == "linux"
+PyQt6-WebEngine==6.9.0; sys_platform == "linux"

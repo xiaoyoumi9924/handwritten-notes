@@ -6,7 +6,9 @@ import json
 import math
 import re
 import secrets
+import threading
 import zipfile
+from functools import wraps
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -26,7 +28,8 @@ SCAN_MODES = {"smart", "color", "bw", "original", "shadow", "bright", "sharp", "
 SCAN_FORMATS = {"pdf", "jpg", "png", "docx"}
 MAX_SCAN_BYTES = 18 * 1024 * 1024
 MAX_SCAN_PIXELS = 60_000_000
-MAX_EDGE = 9_000
+# OpenCV's geometric transforms require dimensions below 32767 pixels.
+MAX_EDGE = 32_766
 PREVIEW_EDGE = 1_800
 FILTER_PREVIEW_EDGE = 400
 FILTER_PREVIEW_VERSION = "29"
@@ -50,7 +53,7 @@ def decode_scan_image(data: bytes) -> Image.Image:
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
         raise ValueError("图片无法读取，请使用 JPG、PNG、HEIC、HEIF、BMP 或 WebP 格式。") from error
     if max(image.size) > MAX_EDGE:
-        image.thumbnail((MAX_EDGE, MAX_EDGE), Image.Resampling.LANCZOS)
+        raise ValueError(f"图片边长超过 {MAX_EDGE} 像素，请先裁切图片。")
     return image
 
 
@@ -985,9 +988,8 @@ def _rectify(rgb: np.ndarray, normalized_points: Sequence[Sequence[float]]) -> n
     right_height = np.linalg.norm(source_points[2] - source_points[1])
     output_width = max(64, round(max(top_width, bottom_width)))
     output_height = max(64, round(max(left_height, right_height)))
-    scale = min(1.0, MAX_EDGE / max(output_width, output_height))
-    output_width = round(output_width * scale)
-    output_height = round(output_height * scale)
+    if max(output_width, output_height) > MAX_EDGE:
+        raise ValueError(f"校正后的图片边长超过 {MAX_EDGE} 像素，请调整裁切范围。")
     destination = np.asarray([
         [0, 0],
         [output_width - 1, 0],
@@ -1113,11 +1115,39 @@ def _unsharp(image: Image.Image, amount: float) -> Image.Image:
     return Image.fromarray(sharpened, mode="RGB")
 
 
+def _scan_locked(method):
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
+def _save_image_atomic(image: Image.Image, target: Path, **options: Any) -> None:
+    temporary = target.with_name(f".{target.name}.{secrets.token_hex(8)}.tmp")
+    try:
+        image.save(temporary, **options)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _write_text_atomic(target: Path, text: str) -> None:
+    temporary = target.with_name(f".{target.name}.{secrets.token_hex(8)}.tmp")
+    try:
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 class ScanService:
     def __init__(self, output_root: Path):
         self.output_root = output_root
+        self._lock = threading.RLock()
         self.output_root.mkdir(parents=True, exist_ok=True)
 
+    @_scan_locked
     def upload(self, filename: str, data: bytes) -> dict[str, Any]:
         safe_name = Path(filename).name
         suffix = Path(safe_name).suffix.lower()
@@ -1146,6 +1176,7 @@ class ScanService:
             "url": f"/output/scans/{scan_id}/preview.webp?v={secrets.token_hex(4)}",
         }
 
+    @_scan_locked
     def process(self, scan_id: str, options: dict[str, Any]) -> dict[str, Any]:
         scan_id = validate_scan_id(scan_id)
         if not isinstance(options, dict):
@@ -1171,15 +1202,16 @@ class ScanService:
         corners = manual_corners or auto_corners
         top_clip = partial.get("topClip") if isinstance(partial, dict) and not manual_corners else None
         result = process_scan_image(source, corners, mode, orientation, rotation, crop, clean_partial_border=bool(partial) and not manual_corners, top_clip=top_clip)
-        aligned = process_scan_image(source, corners, "original", orientation, rotation, crop)
-        aligned.save(scan_root / "aligned-original.png", format="PNG", optimize=True)
-        (scan_root / "current-options.json").write_text(json.dumps({"mode": mode}), encoding="utf-8")
+        aligned = result.copy() if mode == "original" else process_scan_image(source, corners, "original", orientation, rotation, crop)
+        _save_image_atomic(aligned, scan_root / "aligned-original.png", format="PNG", optimize=True)
+        _write_text_atomic(scan_root / "current-options.json", json.dumps({"mode": mode}))
         response = self._save_result(scan_id, result, metadata, warning=not bool(corners))
         response["filterPipelineVersion"] = FILTER_PREVIEW_VERSION
         response["autoCorners"] = auto_corners
         response["alignedOriginalUrl"] = f"/output/scans/{scan_id}/aligned-original.png?v={secrets.token_hex(4)}"
         return response
 
+    @_scan_locked
     def filter_preview(self, scan_id: str, options: dict[str, Any]) -> dict[str, str]:
         """Render an isolated thumbnail without changing the export result.
 
@@ -1219,14 +1251,10 @@ class ScanService:
             selected = corners or auto_corners
             result = process_scan_image(source, selected, mode, orientation, rotation, crop, clean_partial_border=bool(partial) and not corners, top_clip=top_clip)
             result.thumbnail((FILTER_PREVIEW_EDGE, FILTER_PREVIEW_EDGE), Image.Resampling.LANCZOS)
-            temporary = scan_root / f".filter-{secrets.token_hex(8)}.tmp"
-            try:
-                result.save(temporary, format="WEBP", quality=90, method=4)
-                temporary.replace(target)
-            finally:
-                temporary.unlink(missing_ok=True)
+            _save_image_atomic(result, target, format="WEBP", quality=90, method=4)
         return {"mode": mode, "url": f"/output/scans/{scan_id}/{filename}"}
 
+    @_scan_locked
     def restoration_preview(self, scan_id: str, marks: Any) -> dict[str, str]:
         scan_root = self._scan_root(scan_id)
         edit = normalize_scan_edits([{"marks": marks}], 1)[0]
@@ -1239,7 +1267,7 @@ class ScanService:
         key = hashlib.sha256(json.dumps([current.stat().st_mtime_ns, edit["restorations"]]).encode()).hexdigest()[:24]
         filename = f"restored-{key}.webp"
         page.thumbnail((PREVIEW_EDGE, PREVIEW_EDGE), Image.Resampling.LANCZOS)
-        page.save(scan_root / filename, format="WEBP", quality=90, method=4)
+        _save_image_atomic(page, scan_root / filename, format="WEBP", quality=90, method=4)
         return {"url": f"/output/scans/{scan_id}/{filename}"}
 
     def _restore_scan_page(self, scan_id: str, page: Image.Image, regions: list[list[float]]) -> Image.Image:
@@ -1259,6 +1287,7 @@ class ScanService:
         with Image.open(source) as opened:
             return restore_regions(page, opened.convert("RGB"), regions)
 
+    @_scan_locked
     def export(self, scan_ids: Any, file_format: Any, edits: Any = None) -> dict[str, str]:
         if file_format not in SCAN_FORMATS:
             raise ValueError("扫描导出格式无效。")
@@ -1278,7 +1307,9 @@ class ScanService:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             with Image.open(current_path) as opened:
                 pages.append(opened.convert("RGB"))
-            names.append(Path(metadata.get("filename", f"scan-{scan_id}")).stem[:60] or f"scan-{scan_id}")
+            name = Path(metadata.get("filename", f"scan-{scan_id}")).stem
+            name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(" .")[:60]
+            names.append(name or f"scan-{scan_id}")
 
         if edits is not None:
             normalized = normalize_scan_edits(edits, len(pages))
@@ -1336,11 +1367,11 @@ class ScanService:
 
     def _save_result(self, scan_id: str, result: Image.Image, metadata: dict[str, Any], warning: bool) -> dict[str, Any]:
         scan_root = self._scan_root(scan_id)
-        result.save(scan_root / "current.png", format="PNG", optimize=True)
+        _save_image_atomic(result, scan_root / "current.png", format="PNG", optimize=True)
         preview = result.copy()
         preview.thumbnail((PREVIEW_EDGE, PREVIEW_EDGE), Image.Resampling.LANCZOS)
         revision = secrets.token_hex(4)
-        preview.save(scan_root / "preview.webp", format="WEBP", quality=90, method=4)
+        _save_image_atomic(preview, scan_root / "preview.webp", format="WEBP", quality=90, method=4)
         return {
             "scanId": scan_id,
             "filename": metadata.get("filename", "扫描图片"),

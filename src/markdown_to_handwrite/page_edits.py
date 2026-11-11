@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import math
-import json
 import re
-from dataclasses import asdict, replace
+import zipfile
+from contextlib import nullcontext
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
@@ -11,7 +11,6 @@ from typing import Any, Sequence
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .config import HandwritingConfig
-from .handwriting import HandwritingEngine
 
 
 _EDIT_TOOLS = {"pen", "highlight", "underline", "comment"}
@@ -131,12 +130,11 @@ def _draw_marks(page: Image.Image, marks: list[dict[str, Any]], handwriting: Han
     result = page.convert("RGBA")
     width_scale = page.width
     for mark in marks:
+        if mark["kind"] == "comment":
+            _draw_comment(result, page, mark, handwriting)
+            continue
         layer = Image.new("RGBA", page.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(layer)
-        if mark["kind"] == "comment":
-            _draw_comment(layer, page, mark, handwriting)
-            result = Image.alpha_composite(result, layer)
-            continue
         points = [(round(x * (page.width - 1)), round(y * (page.height - 1))) for x, y in mark["points"]]
         width = max(2, round(mark["width"] * width_scale))
         red, green, blue = tuple(bytes.fromhex(mark["color"][1:]))
@@ -150,39 +148,42 @@ def _draw_marks(page: Image.Image, marks: list[dict[str, Any]], handwriting: Han
     return result.convert("RGB")
 
 
-@lru_cache(maxsize=128)
-def _render_comment(text: str, size: int, text_width: int, config_json: str) -> Image.Image:
-    config = HandwritingConfig(**json.loads(config_json))
-    engine = HandwritingEngine(config, reference_size_px=size)
+@lru_cache(maxsize=32)
+def _comment_font(size: int) -> ImageFont.FreeTypeFont:
+    font = ImageFont.truetype(str(Path(__file__).resolve().parent / "assets" / "NotoSansSC.ttf"), size)
+    font.set_variation_by_name("Regular")
+    return font
+
+
+@lru_cache(maxsize=16)
+def _render_comment(text: str, size: int, text_width: int, color: str) -> Image.Image:
+    font = _comment_font(size)
+    measure = ImageDraw.Draw(Image.new("L", (1, 1)))
     lines: list[str] = []
     for paragraph in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         line = ""
         for char in paragraph:
-            if line and engine.measure(line + char, size) > text_width:
+            if line and measure.textlength(line + char, font=font) > text_width:
                 lines.append(line)
                 line = char
             else:
                 line += char
         lines.append(line)
-    rendered = [engine.render_line(line, size, text_width, seed_extra=f"comment:{i}") for i, line in enumerate(lines)]
-    gap = max(2, round(size * .2))
-    total_height = sum(image.height for image in rendered) + gap * max(0, len(rendered) - 1)
-    result = Image.new("RGBA", (min(text_width, max(image.width for image in rendered)), max(1, total_height)))
-    y = 0
-    for image in rendered:
-        result.alpha_composite(image, (0, y))
-        y += image.height + gap
-    return result
+    padding = max(2, round(size * .08))
+    line_height = max(size + 1, round(size * 1.3))
+    width = min(text_width + 2 * padding, max(1, round(max(measure.textlength(line, font=font) for line in lines)) + 2 * padding))
+    image = Image.new("RGBA", (width, len(lines) * line_height + 2 * padding), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    for index, line in enumerate(lines):
+        draw.text((padding, padding + index * line_height), line, font=font, fill=color, anchor="lt")
+    return image
 
 
 def comment_image(page: Image.Image, mark: dict[str, Any],
                   handwriting: HandwritingConfig | None = None) -> Image.Image:
-    page_width, page_height = page.size
-    size = max(12, round(mark["width"] * page_width))
-    config = replace(handwriting or HandwritingConfig(), ink_color=mark["color"])
-    text_width = min(page_width, max(size * 4, round(page_width * 0.48)))
-    config_json = json.dumps(asdict(config), sort_keys=True, ensure_ascii=False)
-    return _render_comment(mark["text"], size, text_width, config_json)
+    size = max(12, round(mark["width"] * page.width))
+    text_width = min(page.width, max(size * 4, round(page.width * 0.48)))
+    return _render_comment(mark["text"], size, text_width, mark["color"])
 
 
 def _draw_comment(layer: Image.Image, page: Image.Image, mark: dict[str, Any],
@@ -199,6 +200,7 @@ def save_pages_pdf(
     output_path: str | Path,
     page_width_mm: float,
     page_height_mm: float,
+    *, page_png_archive: str | Path | None = None,
 ) -> Path:
     if not pages:
         raise ValueError("没有可导出的手稿页面。")
@@ -206,14 +208,17 @@ def save_pages_pdf(
     output.parent.mkdir(parents=True, exist_ok=True)
     width_pt = page_width_mm / 25.4 * 72
     height_pt = page_height_mm / 25.4 * 72
-    # PyMuPDF embeds the RGB pixels losslessly, avoiding ReportLab's costly
-    # Python ASCII85 encoding of every full-resolution page.
+    # Reuse already-encoded PNGs when available; both paths preserve RGB pixels.
     import pymupdf
-    with pymupdf.open() as pdf:
-        for page in pages:
-            rgb = page.convert("RGB")
-            pixmap = pymupdf.Pixmap(pymupdf.csRGB, rgb.width, rgb.height, rgb.tobytes(), False)
+    archive = zipfile.ZipFile(page_png_archive) if page_png_archive is not None else nullcontext(None)
+    with pymupdf.open() as pdf, archive as source:
+        for index in range(1, len(pages) + 1):
             target = pdf.new_page(width=width_pt, height=height_pt)
-            target.insert_image(target.rect, pixmap=pixmap)
+            if source is not None:
+                target.insert_image(target.rect, stream=source.read(f"handwritten-page-{index:03d}.png"))
+            else:
+                rgb = pages[index - 1].convert("RGB")
+                pixmap = pymupdf.Pixmap(pymupdf.csRGB, rgb.width, rgb.height, rgb.tobytes(), False)
+                target.insert_image(target.rect, pixmap=pixmap)
         pdf.save(output, deflate=True)
     return output

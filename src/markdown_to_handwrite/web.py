@@ -4,12 +4,15 @@ import argparse
 import base64
 import binascii
 import io
+import ipaddress
 import json
 import math
 import mimetypes
 import re
 import secrets
+import shutil
 import threading
+import tempfile
 import webbrowser
 import sys
 import zipfile
@@ -27,6 +30,7 @@ from .docx_importer import import_docx_bytes
 from .docx_exporter import export_pages_as_docx
 from .markdown_parser import parse_markdown
 from .page_edits import apply_page_edits, comment_image, normalize_page_edits, save_pages_pdf
+from .page_store import DiskPages
 from .renderer import PROJECT_ROOT, ReportRenderer
 from .scanner import MAX_SCAN_BYTES, ScanService, validate_scan_id
 
@@ -36,6 +40,37 @@ OUTPUT_ROOT = PROJECT_ROOT / "output" / "webui"
 MAX_REQUEST_BYTES = 8 * 1024 * 1024
 MAX_DOCX_BYTES = 5 * 1024 * 1024
 MAX_SCAN_REQUEST_BYTES = (MAX_SCAN_BYTES * 4 // 3) + (256 * 1024)
+MAX_HTTP_CONNECTIONS = 24
+
+
+class LimitedHTTPServer(ThreadingHTTPServer):
+    """Bound the number of request threads, including slow clients."""
+
+    def __init__(self, *args: Any, max_connections: int = MAX_HTTP_CONNECTIONS, **kwargs: Any):
+        if max_connections < 1:
+            raise ValueError("并发连接数必须大于 0。")
+        self._connection_slots = threading.BoundedSemaphore(max_connections)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._connection_slots.acquire(blocking=False):
+            try:
+                request.sendall(b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._connection_slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._connection_slots.release()
 
 
 def _range(
@@ -170,7 +205,7 @@ CONFIG_SECTIONS: list[dict[str, Any]] = [
         "description": "只改变字符和笔画的几何形状，不改变墨色与基础笔宽",
         "fields": [
             _range("handwriting.position_disorder", "文字位置凌乱度", 0, 100, 10, "%", "随机调整文字的上下和左右位置；默认 10%，0% 关闭额外扰动。"),
-            _range("handwriting.correction_probability", "随机勾画涂改概率", 0, 10, 1, "%", "默认 4%；模拟划掉并在附近重写。"),
+            _range("handwriting.correction_probability", "随机勾画涂改概率", 0, 10, 1, "%", "按概率划掉文字并在附近重写；英文按单词处理。"),
             _toggle("handwriting.prefer_handright", "优先使用 Handright", "仅在关闭或无法加载 SDT 轨迹引擎时生效。"),
             _range("handwriting.perturb_theta_sigma", "字符旋转标准差", 0, 0.06, 0.001, "rad", "所有引擎统一按弧度解释；默认配置为 0.008 rad，正式预设为 0.003 rad（约 0.17°）。"),
             _range("handwriting.math_jitter_scale", "公式扰动强度", 0, 1, 0.01, "×", "只缩放公式字符和公式线条的随机变化；正文笔迹不受影响。0 为完全关闭公式扰动，0.2 为默认轻微变化。"),
@@ -330,7 +365,7 @@ INTERNAL_CONFIG_PATHS = frozenset({
     "handwriting.math_match_body_ink",
     "handwriting.natural_one", "handwriting.handwritten_quotes",
     "handwriting.handwritten_punctuation", "handwriting.preserve_chinese_punctuation",
-    "handwriting.handwritten_digit_one", "handwriting.uniform_table_ink", "handwriting.legible_decimal_point",
+    "handwriting.handwritten_digit_one", "handwriting.latin_word_corrections", "handwriting.uniform_table_ink", "handwriting.legible_decimal_point",
 })
 
 
@@ -400,6 +435,7 @@ def _font_presets() -> dict[str, dict[str, Any]]:
             "sdt_trajectory_path": None,
             "reference_glyph_path": None,
             "uniform_ink_enabled": True,
+            "uniform_table_ink": True,
             "handwritten_digit_one": True,
             "handwritten_punctuation": True,
             "preserve_chinese_punctuation": True,
@@ -448,6 +484,46 @@ def _font_presets() -> dict[str, dict[str, Any]]:
         presets["shaohua"] = fields
         for name, preset in presets.items():
             if name != "shaohua":
+                for key in fields:
+                    preset.setdefault(key, getattr(_DEFAULT_HANDWRITING, key.split(".", 1)[1]))
+    for preset_name, english_path in (("caveat", "font/Latin-Caveat-Regular.ttf"),
+                                      ("kalam", "font/Latin-Kalam-Regular.ttf")):
+        if not (PROJECT_ROOT / english_path).is_file():
+            continue
+        # An English-first preset uses the same face for body and math, with
+        # a bundled CJK font available when mixed-language text is supplied.
+        fields = dict(presets.get("shaohua", presets.get("anjingchen", presets["formal"])))
+        fields.update({
+            "handwriting.font_path": english_path,
+            "handwriting.latin_font_path": english_path,
+            "handwriting.math_font_path": english_path,
+            "handwriting.fallback_font_path": "font/1_SDT.ttf",
+            "handwriting.latin_upright_correction_deg": 0.0,
+            "handwriting.sdt_trajectory_enabled": False,
+            "handwriting.sdt_trajectory_path": None,
+            "handwriting.reference_glyph_path": None,
+            "handwriting.uniform_ink_enabled": False,
+            "handwriting.uniform_table_ink": True,
+            "handwriting.handwritten_digit_one": True,
+            "handwriting.latin_word_corrections": True,
+            "handwriting.legible_decimal_point": True,
+            "handwriting.handwritten_punctuation": False,
+            "handwriting.preserve_chinese_punctuation": True,
+            "handwriting.second_layer_enabled": False,
+            "handwriting.correction_probability": 0.0,
+            "handwriting.math_wrap_long": True,
+            "handwriting.math_match_body_ink": True,
+            "handwriting.math_character_rotation_deg": 0.0,
+            "handwriting.math_font_pt": 18.0,
+            "handwriting.math_display_left_aligned": False,
+            "handwriting.math_inline_scale": 1.1,
+            "handwriting.math_stroke_weight_scale": 1.0,
+        })
+        if preset_name == "caveat":
+            fields["handwriting.math_stroke_weight_scale"] = 1.25
+        presets[preset_name] = fields
+        for name, preset in presets.items():
+            if name != preset_name:
                 for key in fields:
                     preset.setdefault(key, getattr(_DEFAULT_HANDWRITING, key.split(".", 1)[1]))
     return presets
@@ -513,13 +589,12 @@ class RenderBusyError(RuntimeError):
 def _save_page_images(pages: list[Image.Image], output: Path, *, page_pngs: list[bytes] | None = None) -> Path:
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for index, page in enumerate(pages, start=1):
+            name = f"handwritten-page-{index:03d}.png"
             if page_pngs is None:
-                buffer = io.BytesIO()
-                page.convert("RGB").save(buffer, format="PNG", compress_level=3)
-                data = buffer.getvalue()
+                with archive.open(zipfile.ZipInfo(name), "w") as target, page.convert("RGB") as rgb:
+                    rgb.save(target, format="PNG", compress_level=3)
             else:
-                data = page_pngs[index - 1]
-            archive.writestr(f"handwritten-page-{index:03d}.png", data, compress_type=zipfile.ZIP_STORED)
+                archive.writestr(name, page_pngs[index - 1], compress_type=zipfile.ZIP_STORED)
     return output
 
 
@@ -557,11 +632,14 @@ class RenderService:
     def render(self, markdown: str, config_data: dict[str, Any]) -> dict[str, Any]:
         if not self.lock.acquire(blocking=False):
             raise RenderBusyError("已有文档正在生成，请稍候。")
+        created_job_root = None
+        page_temp = None
         try:
             config = config_from_dict(config_data)
             validate_config(config)
             blocks = parse_markdown(markdown)
-            renderer = ReportRenderer(config, base_dir=PROJECT_ROOT)
+            page_temp = tempfile.TemporaryDirectory(prefix="miaobi-pages-")
+            renderer = ReportRenderer(config, base_dir=PROJECT_ROOT, page_store_dir=Path(page_temp.name))
             pages = renderer.render(blocks)
             warnings = [
                 item
@@ -572,20 +650,16 @@ class RenderService:
             job_id = secrets.token_hex(8)
             job_root = self.output_root / job_id
             job_root.mkdir(parents=True, exist_ok=False)
-            page_pngs = []
-            for page in pages:
-                buffer = io.BytesIO()
-                page.convert("RGB").save(buffer, format="PNG", compress_level=3)
-                page_pngs.append(buffer.getvalue())
-            pdf_path = renderer.save_pdf(job_root / "markdown-to-handwrite.pdf")
+            created_job_root = job_root
+            image_path = _save_page_images(pages, job_root / "handwritten-pages.zip")
+            pdf_path = renderer.save_pdf(job_root / "markdown-to-handwrite.pdf", page_png_archive=image_path)
             docx_path = export_pages_as_docx(
                 pages,
                 job_root / "markdown-to-handwrite.docx",
                 config.page.width_mm,
                 config.page.height_mm,
-                page_pngs=page_pngs,
+                page_png_archive=image_path,
             )
-            image_path = _save_page_images(pages, job_root / "handwritten-pages.zip", page_pngs=page_pngs)
             (job_root / "metadata.json").write_text(
                 json.dumps({
                     "page_width_mm": config.page.width_mm,
@@ -612,14 +686,23 @@ class RenderService:
                 "image": f"/output/{job_id}/{image_path.name}",
                 "warnings": warnings,
             }
+        except Exception:
+            if created_job_root is not None:
+                shutil.rmtree(created_job_root, ignore_errors=True)
+            raise
         finally:
-            self.lock.release()
+            try:
+                if page_temp is not None:
+                    page_temp.cleanup()
+            finally:
+                self.lock.release()
 
     def edit_pages(self, job_id: str, edit_data: Any) -> dict[str, Any]:
         if not isinstance(job_id, str) or not re.fullmatch(r"[0-9a-f]{16}", job_id):
             raise ValueError("手稿任务不存在，请重新生成页面。")
         if not self.lock.acquire(blocking=False):
             raise RenderBusyError("已有文档正在生成，请稍候。")
+        page_temp = None
         try:
             job_root = _safe_child(self.output_root, job_id)
             if job_root is None or not job_root.is_dir():
@@ -632,71 +715,60 @@ class RenderService:
             page_count = int(metadata["page_count"])
             edits = normalize_page_edits(edit_data, page_count)
 
-            with zipfile.ZipFile(source_docx) as package:
-                source_images = []
-                for index in range(1, page_count + 1):
-                    image_path = f"word/media/page-{index}.png"
-                    try:
-                        source = Image.open(io.BytesIO(package.read(image_path))).convert("RGB")
-                    except (KeyError, OSError, zipfile.BadZipFile) as error:
-                        raise ValueError("手稿原始页面无法读取，请重新生成页面。") from error
-                    source_images.append(source.copy())
-
-            handwriting = config_from_dict({"handwriting": metadata.get("handwriting", {})}).handwriting
-            pages = [apply_page_edits(page, edits[index], handwriting) for index, page in enumerate(source_images)]
-            preview_edits = [
-                {
-                    **item,
-                    "marks": [],
-                }
-                for item in edits
-            ]
-            preview_pages = [apply_page_edits(page, preview_edits[index], handwriting)
-                             for index, page in enumerate(source_images)]
-            width_mm = float(metadata["page_width_mm"])
-            height_mm = float(metadata["page_height_mm"])
-            pdf_path = save_pages_pdf(pages, job_root / "markdown-to-handwrite.pdf", width_mm, height_mm)
-            image_path = _save_page_images(pages, job_root / "handwritten-pages.zip")
-            is_edited = any(item["rotation"] or item["crop"] is not None or item["marks"] for item in edits)
-            edited_docx = job_root / "markdown-to-handwrite-edited.docx"
-            if is_edited:
-                docx_path = export_pages_as_docx(pages, edited_docx, width_mm, height_mm)
-            else:
-                edited_docx.unlink(missing_ok=True)
-                docx_path = source_docx
-
+            edit_config = config_from_dict({"handwriting": metadata.get("handwriting", {})})
+            handwriting = edit_config.handwriting
+            page_temp = tempfile.TemporaryDirectory(prefix="miaobi-edits-")
+            pages = DiskPages(Path(page_temp.name))
             revision = secrets.token_hex(4)
             page_urls = []
             export_page_urls = []
-            for index, page in enumerate(pages, start=1):
-                preview = preview_pages[index - 1].copy()
-                preview.thumbnail((1280, 1810), resample=Image.Resampling.LANCZOS)
-                preview_name = f"page-{index}-preview.webp"
-                preview.save(job_root / preview_name, "WEBP", quality=90, method=4)
-                page_urls.append(f"/output/{job_id}/{preview_name}?v={revision}")
-
-                export_preview = page.copy()
-                export_preview.thumbnail((1280, 1810), resample=Image.Resampling.LANCZOS)
-                export_name = f"page-{index}-export.webp"
-                export_preview.save(job_root / export_name, "WEBP", quality=90, method=4)
-                export_page_urls.append(f"/output/{job_id}/{export_name}?v={revision}")
-
             comment_images = []
-            for page_index, item in enumerate(edits):
-                entries = {}
-                for mark_index, mark in enumerate(item["marks"]):
-                    if mark["kind"] != "comment":
-                        continue
-                    source = source_images[page_index]
-                    bitmap = comment_image(source, mark, handwriting)
-                    buffer = io.BytesIO()
-                    bitmap.save(buffer, format="PNG")
-                    entries[str(mark_index)] = {
-                        "url": "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii"),
-                        "width": bitmap.width / source.width,
-                        "height": bitmap.height / source.height,
-                    }
-                comment_images.append(entries)
+            with zipfile.ZipFile(source_docx) as package:
+                for index, item in enumerate(edits, start=1):
+                    try:
+                        with package.open(f"word/media/page-{index}.png") as image:
+                            source = Image.open(image).convert("RGB")
+                    except (KeyError, OSError, zipfile.BadZipFile) as error:
+                        raise ValueError("手稿原始页面无法读取，请重新生成页面。") from error
+                    page = apply_page_edits(source, item, handwriting)
+                    preview = apply_page_edits(source, {**item, "marks": []}, handwriting)
+                    preview.thumbnail((1280, 1810), resample=Image.Resampling.LANCZOS)
+                    preview_name = f"page-{index}-preview.webp"
+                    preview.save(job_root / preview_name, "WEBP", quality=90, method=4)
+                    page_urls.append(f"/output/{job_id}/{preview_name}?v={revision}")
+                    export_preview = page.copy()
+                    export_preview.thumbnail((1280, 1810), resample=Image.Resampling.LANCZOS)
+                    export_name = f"page-{index}-export.webp"
+                    export_preview.save(job_root / export_name, "WEBP", quality=90, method=4)
+                    export_page_urls.append(f"/output/{job_id}/{export_name}?v={revision}")
+                    entries = {}
+                    for mark_index, mark in enumerate(item["marks"]):
+                        if mark["kind"] == "comment":
+                            bitmap = comment_image(source, mark, handwriting)
+                            buffer = io.BytesIO()
+                            bitmap.save(buffer, format="PNG")
+                            entries[str(mark_index)] = {
+                                "url": "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii"),
+                                "width": bitmap.width / source.width, "height": bitmap.height / source.height,
+                            }
+                    comment_images.append(entries)
+                    pages.append(page)
+                    pages.spill()
+                    source.close()
+                    preview.close()
+                    export_preview.close()
+            width_mm = float(metadata["page_width_mm"])
+            height_mm = float(metadata["page_height_mm"])
+            image_path = _save_page_images(pages, job_root / "handwritten-pages.zip")
+            pdf_path = save_pages_pdf(pages, job_root / "markdown-to-handwrite.pdf", width_mm, height_mm,
+                                      page_png_archive=image_path)
+            is_edited = any(item["rotation"] or item["crop"] is not None or item["marks"] for item in edits)
+            edited_docx = job_root / "markdown-to-handwrite-edited.docx"
+            if is_edited:
+                docx_path = export_pages_as_docx(pages, edited_docx, width_mm, height_mm, page_png_archive=image_path)
+            else:
+                edited_docx.unlink(missing_ok=True)
+                docx_path = source_docx
             return {
                 "jobId": job_id,
                 "pageCount": page_count,
@@ -708,7 +780,11 @@ class RenderService:
                 "image": f"/output/{job_id}/{image_path.name}?v={revision}",
             }
         finally:
-            self.lock.release()
+            try:
+                if page_temp is not None:
+                    page_temp.cleanup()
+            finally:
+                self.lock.release()
 
 
 def _safe_child(root: Path, relative: str) -> Path | None:
@@ -722,6 +798,7 @@ def _safe_child(root: Path, relative: str) -> Path | None:
 
 class WebApp:
     def __init__(self, output_root: Path = OUTPUT_ROOT):
+        self.csrf_token = secrets.token_urlsafe(32)
         self.render_service = RenderService(output_root)
         self.scan_service = ScanService(output_root / "scans")
 
@@ -731,13 +808,19 @@ class WebApp:
         class Handler(BaseHTTPRequestHandler):
             server_version = "HandwrittenReport/0.2"
 
+            def setup(self) -> None:
+                super().setup()
+                self.connection.settimeout(30)
+
             def do_GET(self) -> None:  # noqa: N802
+                if not self._valid_request():
+                    return
                 parsed = urlparse(self.path)
                 path = unquote(parsed.path)
                 if path == "/api/health":
                     self._send_json({"status": "ok"})
                 elif path == "/api/bootstrap":
-                    self._send_json(build_bootstrap())
+                    self._send_json({**build_bootstrap(), "csrfToken": app.csrf_token})
                 elif path.startswith("/api/examples/"):
                     self._serve_example(path.removeprefix("/api/examples/"))
                 elif path.startswith("/output/"):
@@ -764,6 +847,15 @@ class WebApp:
                     self._serve_static("index.html" if path in {"/", ""} else path.lstrip("/"))
 
             def do_POST(self) -> None:  # noqa: N802
+                if not self._valid_request():
+                    return
+                token = self.headers.get("X-Miaobi-Token", "")
+                if not token.isascii() or not secrets.compare_digest(token, app.csrf_token):
+                    self._send_json({"error": "会话已过期，请刷新页面。"}, HTTPStatus.FORBIDDEN)
+                    return
+                if self.headers.get_content_type() != "application/json":
+                    self._send_json({"error": "请求必须使用 JSON 格式。"}, HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+                    return
                 path = urlparse(self.path).path
                 if path == "/api/background/upload":
                     try:
@@ -912,6 +1004,20 @@ class WebApp:
                     raise ValueError("请求必须是 JSON 对象。")
                 return payload
 
+            def _valid_request(self) -> bool:
+                host = self.headers.get("Host", "")
+                address, port = self.server.server_address[:2]
+                allowed = {f"127.0.0.1:{port}", f"localhost:{port}"}
+                local_address = self.connection.getsockname()[0]
+                allowed.add(f"{local_address}:{port}")
+                if address not in {"0.0.0.0", "::"}:
+                    allowed.add(f"{address}:{port}")
+                origin = self.headers.get("Origin")
+                if host.lower() not in allowed or (origin is not None and origin != f"http://{host}"):
+                    self._send_json({"error": "请求来源无效。"}, HTTPStatus.FORBIDDEN)
+                    return False
+                return True
+
             def _serve_example(self, name: str) -> None:
                 path = _safe_child(PROJECT_ROOT / "examples", name)
                 if path is None or path.suffix.lower() != ".md" or not path.is_file():
@@ -962,6 +1068,8 @@ class WebApp:
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("X-Frame-Options", "DENY")
                 for key, value in (headers or {}).items():
                     self.send_header(key, value)
                 self.end_headers()
@@ -984,9 +1092,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    try:
+        is_loopback = args.host == "localhost" or ipaddress.ip_address(args.host).is_loopback
+    except ValueError:
+        is_loopback = False
+    if not is_loopback:
+        raise SystemExit("为保护文稿和本机文件，服务仅允许监听本机地址。")
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     app = WebApp()
-    server = ThreadingHTTPServer((args.host, args.port), app.handler_class())
+    server = LimitedHTTPServer((args.host, args.port), app.handler_class())
     url = f"http://{args.host}:{server.server_port}"
     print(f"MarkdownToHandwrite WebUI: {url}")
     if not args.no_browser:

@@ -25,7 +25,7 @@ def test_photo_glyph_is_used_for_chinese_in_text_and_math():
         assert engine._reference_glyph_mask('下') is None
 
 
-def test_ruled_paragraph_does_not_leave_single_line_on_next_page():
+def test_ruled_paragraph_uses_all_available_lines_before_page_break():
     from markdown_to_handwrite.config import ReportConfig
     from markdown_to_handwrite.markdown_parser import InlinePart
     from markdown_to_handwrite.renderer import ReportRenderer, _RichLine
@@ -47,7 +47,7 @@ def test_ruled_paragraph_does_not_leave_single_line_on_next_page():
         renderer, '_paste_rich_line', side_effect=lambda *args, **kwargs: pages.append(len(renderer.pages))
     ):
         renderer._draw_rich_paragraph([InlinePart('text', '测试')])
-    assert pages == [1, 1, 2, 2]
+    assert pages == [1, 1, 1, 2]
 
 
 def test_explicit_missing_personal_assets_raise_clear_error(tmp_path):

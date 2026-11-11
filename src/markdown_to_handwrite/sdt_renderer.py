@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import math
+import threading
 import zipfile
+from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -12,6 +14,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 BUNDLED_TRAJECTORIES = Path(__file__).resolve().parent / "assets" / "sdt_trajectories.zip"
+_FIT_CACHE_LIMIT = 16 * 1024 * 1024
+_fit_cache: OrderedDict[tuple, tuple[tuple[np.ndarray, ...], int]] = OrderedDict()
+_fit_cache_size = 0
+_fit_cache_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -120,10 +126,7 @@ def render_strokes(
     supersample = max(1, int(style.supersample))
     em_size = max(1, int(em_size if em_size is not None else min(width, height)))
     sample_spacing = max(0.5, em_size / 80.0)
-    fitted = tuple(
-        _resample_stroke(stroke, sample_spacing)
-        for stroke in _fit_strokes(strokes, width, height, padding_ratio=0.045)
-    )
+    fitted = _cached_fitted_strokes(strokes, width, height, sample_spacing)
     center = np.array([width / 2.0, height / 2.0], dtype=np.float32)
     angle = math.radians(float(geometry_rng.normal(0.0, max(0.0, style.rotation_sigma_deg))))
     rotation = np.array(
@@ -201,6 +204,35 @@ def _fit_strokes(
     used = extent * scale
     offset = np.array([(width - used[0]) / 2.0, (height - used[1]) / 2.0], dtype=np.float32)
     return tuple((stroke - minimum) * scale + offset for stroke in strokes)
+
+
+def _cached_fitted_strokes(
+    strokes: tuple[np.ndarray, ...], width: int, height: int, spacing: float,
+) -> tuple[np.ndarray, ...]:
+    """Reuse only deterministic geometry; per-glyph randomness remains independent."""
+    global _fit_cache_size
+    raw_bytes = sum(stroke.nbytes for stroke in strokes)
+    if raw_bytes > _FIT_CACHE_LIMIT // 4:
+        return tuple(_resample_stroke(stroke, spacing) for stroke in _fit_strokes(strokes, width, height, 0.045))
+    key = (width, height, spacing, tuple((stroke.dtype.str, stroke.shape, stroke.tobytes()) for stroke in strokes))
+    with _fit_cache_lock:
+        cached = _fit_cache.get(key)
+        if cached is not None:
+            _fit_cache.move_to_end(key)
+            return cached[0]
+    fitted = tuple(_resample_stroke(stroke, spacing) for stroke in _fit_strokes(strokes, width, height, 0.045))
+    cost = raw_bytes + sum(stroke.nbytes for stroke in fitted)
+    if cost <= _FIT_CACHE_LIMIT:
+        with _fit_cache_lock:
+            previous = _fit_cache.pop(key, None)
+            if previous is not None:
+                _fit_cache_size -= previous[1]
+            while _fit_cache and _fit_cache_size + cost > _FIT_CACHE_LIMIT:
+                _, (_, evicted_cost) = _fit_cache.popitem(last=False)
+                _fit_cache_size -= evicted_cost
+            _fit_cache[key] = (fitted, cost)
+            _fit_cache_size += cost
+    return fitted
 
 
 def _resample_stroke(stroke: np.ndarray, spacing: float) -> np.ndarray:

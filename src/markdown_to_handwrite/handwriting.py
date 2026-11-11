@@ -141,6 +141,10 @@ class HandwritingEngine:
             previous_char = char
         return extent
 
+    def corrected_line_width(self, text: str, size_px: int) -> int:
+        """Width of a text line rendered with correction marks enabled."""
+        return max(1, _ceil(self.measure(text, size_px)) + 2 * max(4, _ceil(size_px * .10)))
+
     def _script_boundary_spacing(
         self,
         previous_char: str | None,
@@ -236,8 +240,7 @@ class HandwritingEngine:
         if corrections and not math:
             # Keep logical text geometry fixed. Separate page decorations must
             # never become line height, baseline, or wrapping measurements.
-            horizontal_pad = max(4, _ceil(size_px * .10))
-            width = max(1, _ceil(self.measure(text, size_px)) + 2 * horizontal_pad)
+            width = self.corrected_line_width(text, size_px)
             height = max(1, round(size_px * self.config.line_spacing))
             fixed_baseline = round(size_px * .96)
             fixed = Image.new("RGBA", (width, height))
@@ -807,6 +810,8 @@ class HandwritingEngine:
         image = Image.new("RGBA", (width, line_height), (0, 0, 0, 0))
         x = pad
         baseline = pad + reference_ascent
+        word_bounds = None
+        word_start = 0
         for index, char in enumerate(text):
             if index:
                 x += self._script_boundary_spacing(text[index - 1], char, size_px, math=math)
@@ -870,13 +875,33 @@ class HandwritingEngine:
             image.alpha_composite(glyph, (glyph_x, glyph_y))
             if corrections and not math:
                 self._draw_correction(image, glyph, glyph_x, glyph_y, char, size_px, seed, index)
+                if self.config.latin_word_corrections and self.config.correction_probability > 0 and char.isascii() and char.isalpha():
+                    box = glyph.getchannel("A").getbbox()
+                    if box:
+                        current = (glyph_x + box[0], glyph_y + box[1], glyph_x + box[2], glyph_y + box[3])
+                        if word_bounds is None:
+                            word_bounds = current
+                            word_start = index
+                        else:
+                            word_bounds = (min(word_bounds[0], current[0]), min(word_bounds[1], current[1]),
+                                           max(word_bounds[2], current[2]), max(word_bounds[3], current[3]))
+                    next_is_letter = index + 1 < len(text) and text[index + 1].isascii() and text[index + 1].isalpha()
+                    if not next_is_letter and word_bounds:
+                        left, top, right, bottom = word_bounds
+                        left, top = max(0, left), max(0, top)
+                        right, bottom = min(image.width, right), min(image.height, bottom)
+                        if right > left and bottom > top:
+                            word = text[word_start:index + 1]
+                            self._draw_correction(image, image.crop((left, top, right, bottom)), left, top,
+                                                  word, size_px, seed, word_start, latin_word=True)
+                        word_bounds = None
             x += self._sample_character_advance(char, size_px, rand, math=math)
         return _crop_alpha(image, pad=4)
 
     def _draw_correction(self, image: Image.Image, glyph: Image.Image, x: int, y: int,
-                         char: str, size: int, seed: int, index: int) -> None:
-        # Select only ideographs so punctuation, numbers and formulas stay legible.
-        if not _is_cjk_ideograph(char):
+                         char: str, size: int, seed: int, index: int, latin_word: bool = False) -> None:
+        # Correct Chinese characters and whole Latin words; skip punctuation and numbers.
+        if not latin_word and not _is_cjk_ideograph(char):
             return
         rand = random.Random(_stable_seed(seed, index, char, "correction"))
         if rand.random() >= self.config.correction_probability / 100:

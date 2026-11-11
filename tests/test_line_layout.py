@@ -62,7 +62,8 @@ class LineLayoutTests(unittest.TestCase):
             image.info["layout_test_text"] = text
             return (image, 9) if kwargs.get("return_baseline") else image
 
-        return patch.multiple(report.engine, measure=measure, render_line=render)
+        return patch.multiple(report.engine, measure=measure, render_line=render,
+                              corrected_line_width=lambda text, size: max(1, round(measure(text.rstrip(), size)) + padding))
 
     def render_and_capture(self, report, parts):
         pasted = []
@@ -108,6 +109,24 @@ class LineLayoutTests(unittest.TestCase):
         self.assertGreater(len(pasted), 1)
         self.assertEqual("".join(self.text_of(line) for line, *_ in pasted), text)
         self.assert_inside_lines(report, pasted)
+
+    def test_long_ascii_word_rasterizes_only_bounded_prefixes(self):
+        report = self.make_report()
+        text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" * 20
+        with self.fixed_text_engine(report):
+            render = report.engine.render_line
+            lengths = []
+
+            def track(value, *args, **kwargs):
+                lengths.append(len(value))
+                return render(value, *args, **kwargs)
+
+            with patch.object(report.engine, "render_line", side_effect=track):
+                lines = report._layout_rich_parts([InlinePart("text", text)], 16, 100, 20, "long")
+        self.assertEqual("".join(self.text_of(line) for line in lines), text)
+        self.assertLessEqual(max(lengths), 32)
+        self.assertTrue(all(line.width <= 100 for line in lines))
+        self.assertTrue(all(line.width == 100 for line in lines[:-1]))
 
     def test_long_closing_punctuation_sequence_cannot_overflow(self):
         report = self.make_report()

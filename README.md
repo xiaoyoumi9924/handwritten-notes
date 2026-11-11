@@ -1,5 +1,7 @@
 # ✍️ 妙笔工坊
 
+[中文](README.md) | [English](README.en.md)
+
 > 将文字，Markdown 和 Word文档转换为真实手写风格的笔记，也可以扫描、整理纸质文档。支持中文、英文和数学公式，可调整书体、纸张和排版，在本地浏览器中预览并导出。
 
 ![妙笔工坊文本转换界面](docs/images/workspace-example.png)

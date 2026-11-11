@@ -6,11 +6,10 @@ import json
 import threading
 import tempfile
 import sys
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import urlopen
 
-from markdown_to_handwrite.web import WebApp
+from markdown_to_handwrite.web import LimitedHTTPServer, WebApp
 
 
 def main() -> None:
@@ -19,7 +18,7 @@ def main() -> None:
     args = parser.parse_args()
     output = Path.home() / '妙笔工坊' / 'output'
     output.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer(('127.0.0.1', 0), WebApp(output).handler_class())
+    server = LimitedHTTPServer(('127.0.0.1', 0), WebApp(output).handler_class())
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     url = f'http://127.0.0.1:{server.server_port}'
