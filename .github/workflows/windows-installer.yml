@@ -29,13 +29,15 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "Installation failed: $($p.ExitCode)" }
           $shortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) '妙笔工坊.lnk'
           if (-not (Test-Path $shortcut)) { throw 'Desktop shortcut missing' }
-          $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
-          Write-Host "Shortcut target: $($link.TargetPath); expected: $(Join-Path $install 'Miaobi.exe')"
-          if (-not (Test-Path $link.TargetPath)) { throw 'Desktop shortcut target does not exist' }
-          if ([IO.Path]::GetFileName($link.TargetPath) -ne 'Miaobi.exe') { throw 'Desktop shortcut points to the wrong program' }
-          $app = Start-Process $link.TargetPath -ArgumentList '--smoke-test' -Wait -PassThru
+          python -m pip install pylnk3
+          if ($LASTEXITCODE -ne 0) { throw 'Shortcut inspection dependency failed' }
+          $linkTarget = & python -c "import pylnk3,sys; print(pylnk3.parse(sys.argv[1]).path or '')" $shortcut
+          Write-Host "Shortcut target: $linkTarget; expected: $(Join-Path $install 'Miaobi.exe')"
+          if (-not (Test-Path $linkTarget)) { throw 'Desktop shortcut target does not exist' }
+          if ([IO.Path]::GetFileName($linkTarget) -ne 'Miaobi.exe') { throw 'Desktop shortcut points to the wrong program' }
+          $app = Start-Process $linkTarget -ArgumentList '--smoke-test' -Wait -PassThru
           if ($app.ExitCode -ne 0) { throw "Installed app failed: $($app.ExitCode)" }
-          $uninstall = Start-Process (Join-Path (Split-Path $link.TargetPath) 'unins000.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
+          $uninstall = Start-Process (Join-Path (Split-Path $linkTarget) 'unins000.exe') -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
           if ($uninstall.ExitCode -ne 0 -or (Test-Path $shortcut)) { throw 'Uninstall did not clean up shortcut' }
       - name: Publish installer
         env:
