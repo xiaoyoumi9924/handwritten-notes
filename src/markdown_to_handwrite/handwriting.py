@@ -8,9 +8,11 @@ import string
 import sys
 import unicodedata
 from math import ceil as _ceil
+from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 
+import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -67,6 +69,10 @@ class HandwritingEngine:
         math_reference_size_px: int | None = None,
     ):
         self.config = config
+        # Own only deterministic, pre-rotation glyphs, bounded per document.
+        self._pillow_glyphs = OrderedDict()
+        self._pillow_glyph_bytes = 0
+        self._pillow_glyph_config = None
         self.reference_size_px = max(
             1,
             reference_size_px
@@ -103,6 +109,14 @@ class HandwritingEngine:
             if not reference_path.is_dir():
                 raise FileNotFoundError(f"照片字形目录不存在: {reference_path}")
             self.reference_glyph_path = reference_path
+        self.reference_glyph_overrides_path = None
+        if config.reference_glyph_overrides_path:
+            overrides_path = Path(config.reference_glyph_overrides_path).expanduser()
+            if not overrides_path.is_absolute():
+                overrides_path = PROJECT_ROOT / overrides_path
+            if not overrides_path.is_dir():
+                raise FileNotFoundError(f"字形修订目录不存在: {overrides_path}")
+            self.reference_glyph_overrides_path = overrides_path
         self.trajectory_store = SdtTrajectoryStore(config.sdt_trajectory_path, PROJECT_ROOT)
         if config.sdt_trajectory_enabled and config.sdt_trajectory_path and not self.trajectory_store.available:
             raise FileNotFoundError(f"笔迹轨迹库不存在: {config.sdt_trajectory_path}")
@@ -537,9 +551,12 @@ class HandwritingEngine:
 
     @lru_cache(maxsize=2048)
     def _reference_glyph_mask(self, char: str) -> Image.Image | None:
-        if self.reference_glyph_path is None:
+        if self.reference_glyph_path is None or char in self.config.reference_glyph_exclude:
             return None
-        path = self.reference_glyph_path / f"{ord(char):04x}.png"
+        path = (self.reference_glyph_overrides_path / f"{ord(char):04x}.png"
+                if self.reference_glyph_overrides_path else None)
+        if path is None or not path.is_file():
+            path = self.reference_glyph_path / f"{ord(char):04x}.png"
         if not path.is_file():
             return None
         with Image.open(path) as source:
@@ -620,6 +637,13 @@ class HandwritingEngine:
                 top = font.getmetrics()[0] - round(size_px * 0.22)
                 symbol_size = max(5, round(size_px * (0.16 if char == "。" else 0.19)))
                 bbox = (left, top, left + symbol_size, top + symbol_size)
+            reference_period = bool(not math and char == '。' and self.reference_glyph_path
+                                    and self.config.reference_punctuation_font and not self.config.handwritten_punctuation)
+            if reference_period:
+                side = max(5, round(size_px * 0.17))
+                left = round(size_px * 0.08)
+                bottom = font.getmetrics()[0] - round(size_px * 0.02)
+                bbox = (left, bottom - side, left + side, bottom)
             glyph_width = max(1, bbox[2] - bbox[0])
             glyph_height = max(1, bbox[3] - bbox[1])
             if char == "一" and self.config.natural_one and not math:
@@ -629,8 +653,22 @@ class HandwritingEngine:
                 extra_height = max(0, round(size_px * 0.16) - glyph_height)
                 bbox = (bbox[0], bbox[1] - extra_height // 2, bbox[2], bbox[3] + extra_height - extra_height // 2)
                 glyph_height = bbox[3] - bbox[1]
-            glyph = self._render_reference_glyph(char, glyph_width, glyph_height) if not math or _is_cjk_ideograph(char) else None
+            use_reference = not math or _is_cjk_ideograph(char) or (char == 'f' and self.config.reference_latin_f_outline)
+            glyph = self._render_reference_glyph(char, glyph_width, glyph_height) if use_reference else None
             is_reference = glyph is not None
+            preserve_symbol = bool(not math and self.reference_glyph_path and self.config.reference_punctuation_font
+                                   and unicodedata.category(char).startswith('P'))
+            if preserve_symbol and glyph is None:
+                glyph = Image.new("RGBA", (glyph_width, glyph_height), (0, 0, 0, 0))
+                if reference_period:
+                    ImageDraw.Draw(glyph).ellipse((1, 1, glyph_width - 2, glyph_height - 2), outline=self.ink,
+                                                  width=max(1, round(size_px * 0.025)))
+                else:
+                    ImageDraw.Draw(glyph).text((-bbox[0], -bbox[1]), char, fill=self.ink, font=font)
+            preserve_latin_f = bool(glyph is None and self.reference_glyph_path and self.config.reference_latin_f_outline and char == 'f')
+            if preserve_latin_f:
+                glyph = Image.new("RGBA", (glyph_width, glyph_height), (0, 0, 0, 0))
+                ImageDraw.Draw(glyph).text((-bbox[0], -bbox[1]), char, fill=self.ink, font=font)
             strokes = self.trajectory_store.load(char) if glyph is None else None
             if glyph is None and strokes is None:
                 strokes = font_glyph_strokes(font_path, char)
@@ -672,7 +710,31 @@ class HandwritingEngine:
                 glyph = Image.new("RGBA", (glyph_width, glyph_height), (0, 0, 0, 0))
                 ImageDraw.Draw(glyph).text((-bbox[0], -bbox[1]), char, fill=self.ink, font=font)
             if not (char == "。" and self.config.handwritten_punctuation and not math):
-                glyph = self._normalize_glyph_ink(glyph, preserve_weight=is_reference and self.config.reference_preserve_stroke_weight)
+                glyph = self._normalize_glyph_ink(glyph, preserve_weight=preserve_symbol or preserve_latin_f or (is_reference and self.config.reference_preserve_stroke_weight))
+            if (is_reference and self.config.uniform_ink_enabled and self.config.reference_override_weight_match
+                    and self.reference_glyph_overrides_path
+                    and (self.reference_glyph_overrides_path / f"{ord(char):04x}.png").is_file()):
+                alpha = glyph.getchannel('A')
+                adjustment = _solve_stroke_weight_adjustment(alpha, self._uniform_ink_target_weight(), 0.3)
+                glyph.putalpha(_adjust_stroke_weight(alpha, adjustment))
+            rotation_offset_x = rotation_offset_y = 0
+            original_width, original_height = glyph.size
+            if is_reference and not math and self.config.reference_scale_sigma_ratio > 0:
+                scale_rng = random.Random(_stable_seed(seed, index, char, "reference-scale"))
+                sigma = min(0.03, self.config.reference_scale_sigma_ratio)
+                def scale_factor():
+                    return 1 + max(-0.06, min(0.06, scale_rng.gauss(0, sigma)))
+                new_size = (max(1, round(glyph.width * scale_factor())),
+                            max(1, round(glyph.height * scale_factor())))
+                if new_size != glyph.size:
+                    glyph = glyph.resize(new_size, Image.Resampling.LANCZOS)
+            if is_reference and not math and self.config.reference_rotation_sigma_deg > 0:
+                rotation_rng = random.Random(_stable_seed(seed, index, char, "reference-rotation"))
+                sigma = min(4.0, self.config.reference_rotation_sigma_deg)
+                angle = max(-3 * sigma, min(3 * sigma, rotation_rng.gauss(0, sigma)))
+                glyph = glyph.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True)
+            rotation_offset_x = round((glyph.width - original_width) / 2)
+            rotation_offset_y = round((glyph.height - original_height) / 2)
             glyph, shear_pad = self._correct_latin_slant(
                 glyph,
                 char,
@@ -681,11 +743,12 @@ class HandwritingEngine:
                 math_mode=math,
             )
             disorder_x, disorder_y = self._disorder_offset(seed, index, size_px, strength)
-            glyph_x = round(x + bbox[0] - shear_pad + self._sample_position_offset(rand, x_sigma) + disorder_x)
+            glyph_x = round(x + bbox[0] - shear_pad - rotation_offset_x + self._sample_position_offset(rand, x_sigma) + disorder_x)
             glyph_y = round(
                 baseline
                 - font.getmetrics()[0]
                 + bbox[1]
+                - rotation_offset_y
                 + self._glyph_vertical_adjustment(char, size_px)
                 + self._sample_position_offset(rand, y_sigma) + disorder_y
             )
@@ -792,7 +855,76 @@ class HandwritingEngine:
         image = next(iter(handwrite(text, template, seed=seed))).convert("RGBA")
         return image
 
+    def _prepared_pillow_glyph(
+        self, char: str, font_path: str, size_px: int, pad: int,
+        line_height: int, baseline: int, reference_ascent: int,
+        math: bool, bbox: tuple[int, int, int, int],
+    ) -> tuple[Image.Image, int]:
+        key = (char, font_path, size_px, pad, line_height, baseline, reference_ascent, math, bbox)
+        cached = self._pillow_glyphs.get(key)
+        if cached is not None:
+            self._pillow_glyphs.move_to_end(key)
+            return cached
+        font = _load_font(font_path, size_px)
+        char_w = max(1, bbox[2] - bbox[0])
+        glyph = Image.new("RGBA", (char_w + 2 * pad, line_height), (0, 0, 0, 0))
+        glyph_draw = ImageDraw.Draw(glyph)
+        glyph_y = baseline - font.getmetrics()[0] + self._glyph_vertical_adjustment(char, size_px)
+        if char == "1" and self.config.handwritten_digit_one:
+            # A single vertical pen stroke, aligned with the original digit's
+            # cap height and baseline in both ordinary text and formulas.
+            center_x = pad + (bbox[0] + bbox[2]) / 2
+            top = glyph_y + bbox[1]
+            bottom = glyph_y + bbox[3] - 1
+            pen = max(1, round(_font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE)))
+            glyph_draw.line((center_x, top, center_x, bottom), fill=self.ink, width=pen)
+        elif char == "." and self.config.legible_decimal_point:
+            pen = max(2, round(_font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE) * 1.3))
+            center_x = pad + (bbox[0] + bbox[2]) / 2
+            center_y = glyph_y + bbox[3] - pen / 2
+            glyph_draw.ellipse((center_x - pen / 2, center_y - pen / 2,
+                                center_x + pen / 2, center_y + pen / 2), fill=self.ink)
+        elif self.config.handwritten_punctuation and not math and char in "。、":
+            pen = max(1, round(_font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE)))
+            left = pad + round(size_px * 0.08)
+            bottom = baseline - round(size_px * 0.03)
+            side = max(3, round(size_px * 0.13))
+            if char == "。":
+                glyph_draw.ellipse((left, bottom - side, left + side, bottom), outline=self.ink, width=pen)
+            else:
+                glyph_draw.line((left, bottom - side, left + side, bottom), fill=self.ink, width=pen)
+        else:
+            glyph_draw.text((pad, glyph_y), char, fill=self.ink, font=font)
+            if self.config.uniform_ink_enabled and _is_latin_text_character(char) and char.isalnum():
+                # Match Latin letters and digits to the body font, without
+                # flattening the expressive variation of Chinese strokes.
+                alpha = glyph.getchannel("A")
+                target = _font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE)
+                adjustment = _solve_stroke_weight_adjustment(alpha, target, MAX_STROKE_WEIGHT_ADJUSTMENT_PX)
+                glyph.putalpha(_adjust_stroke_weight(alpha, adjustment))
+        glyph, shear_pad = self._correct_latin_slant(
+            glyph,
+            char,
+            font_path,
+            baseline_y=pad + reference_ascent - bbox[1] + self._glyph_vertical_adjustment(char, size_px),
+            math_mode=math,
+        )
+        cost = glyph.width * glyph.height * 4
+        limit = 8 * 1024 * 1024
+        if cost <= limit:
+            while self._pillow_glyphs and (self._pillow_glyph_bytes + cost > limit or len(self._pillow_glyphs) >= 512):
+                (_, (previous, _)) = self._pillow_glyphs.popitem(last=False)
+                self._pillow_glyph_bytes -= previous.width * previous.height * 4
+            self._pillow_glyphs[key] = (glyph, shear_pad)
+            self._pillow_glyph_bytes += cost
+        return glyph, shear_pad
+
     def _render_with_pillow(self, text: str, size_px: int, max_width: int, seed: int, math: bool = False, corrections: bool = False) -> Image.Image:
+        signature = tuple(vars(self.config).items())
+        if self._pillow_glyph_config != signature:
+            self._pillow_glyphs.clear()
+            self._pillow_glyph_bytes = 0
+            self._pillow_glyph_config = signature
         rand = random.Random(seed)
         x_sigma = self._glyph_position_sigma(size_px, self.config.perturb_x_sigma_px, math_mode=math)
         y_sigma = self._vertical_position_sigma(size_px, math_mode=math)
@@ -824,48 +956,8 @@ class HandwritingEngine:
             if bbox is None:
                 x += self._sample_character_advance(char, size_px, rand, math=math)
                 continue
-            char_w = max(1, bbox[2] - bbox[0])
-            glyph = Image.new("RGBA", (char_w + 2 * pad, line_height), (0, 0, 0, 0))
-            glyph_draw = ImageDraw.Draw(glyph)
-            glyph_y = baseline - font.getmetrics()[0] + self._glyph_vertical_adjustment(char, size_px)
-            if char == "1" and self.config.handwritten_digit_one:
-                # A single vertical pen stroke, aligned with the original digit's
-                # cap height and baseline in both ordinary text and formulas.
-                center_x = pad + (bbox[0] + bbox[2]) / 2
-                top = glyph_y + bbox[1]
-                bottom = glyph_y + bbox[3] - 1
-                pen = max(1, round(_font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE)))
-                glyph_draw.line((center_x, top, center_x, bottom), fill=self.ink, width=pen)
-            elif char == "." and self.config.legible_decimal_point:
-                pen = max(2, round(_font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE) * 1.3))
-                center_x = pad + (bbox[0] + bbox[2]) / 2
-                center_y = glyph_y + bbox[3] - pen / 2
-                glyph_draw.ellipse((center_x - pen / 2, center_y - pen / 2,
-                                    center_x + pen / 2, center_y + pen / 2), fill=self.ink)
-            elif self.config.handwritten_punctuation and not math and char in "。、":
-                pen = max(1, round(_font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE)))
-                left = pad + round(size_px * 0.08)
-                bottom = baseline - round(size_px * 0.03)
-                side = max(3, round(size_px * 0.13))
-                if char == "。":
-                    glyph_draw.ellipse((left, bottom - side, left + side, bottom), outline=self.ink, width=pen)
-                else:
-                    glyph_draw.line((left, bottom - side, left + side, bottom), fill=self.ink, width=pen)
-            else:
-                glyph_draw.text((pad, glyph_y), char, fill=self.ink, font=font)
-                if self.config.uniform_ink_enabled and _is_latin_text_character(char) and char.isalnum():
-                    # Match Latin letters and digits to the body font, without
-                    # flattening the expressive variation of Chinese strokes.
-                    alpha = glyph.getchannel("A")
-                    target = _font_optical_weight(self.font_path, size_px, TEXT_STROKE_WEIGHT_SAMPLE)
-                    adjustment = _solve_stroke_weight_adjustment(alpha, target, MAX_STROKE_WEIGHT_ADJUSTMENT_PX)
-                    glyph.putalpha(_adjust_stroke_weight(alpha, adjustment))
-            glyph, shear_pad = self._correct_latin_slant(
-                glyph,
-                char,
-                font_path,
-                baseline_y=pad + reference_ascent - bbox[1] + self._glyph_vertical_adjustment(char, size_px),
-                math_mode=math,
+            glyph, shear_pad = self._prepared_pillow_glyph(
+                char, font_path, size_px, pad, line_height, baseline, reference_ascent, math, bbox,
             )
             angle = rand.gauss(0, self._glyph_rotation_sigma_degrees(math_mode=math))
             glyph = glyph.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False)
@@ -1232,6 +1324,14 @@ def _font_optical_weight(font_path: str, size_px: int, sample: str) -> float:
     return _estimate_optical_stroke_weight(alpha)
 
 
+def _morph_ink_mask(alpha: Image.Image, *, dilate: bool) -> Image.Image:
+    """Fast 3x3 extrema with the same replicated edges as Pillow rank filters."""
+    if alpha.mode != "L":
+        return alpha.filter(ImageFilter.MaxFilter(3) if dilate else ImageFilter.MinFilter(3))
+    operation = cv2.dilate if dilate else cv2.erode
+    return Image.fromarray(operation(np.asarray(alpha), None, borderType=cv2.BORDER_REPLICATE))
+
+
 def _estimate_stroke_width(alpha: Image.Image, threshold: int = 64) -> float:
     """Estimate mean stroke width from mask area lost after one-pixel erosion."""
     if alpha.width < 3 or alpha.height < 3:
@@ -1240,7 +1340,7 @@ def _estimate_stroke_width(alpha: Image.Image, threshold: int = 64) -> float:
     area = sum(histogram[threshold:])
     if area <= 0:
         return 0.0
-    eroded_histogram = alpha.filter(ImageFilter.MinFilter(3)).histogram()
+    eroded_histogram = _morph_ink_mask(alpha, dilate=False).histogram()
     inner_area = sum(eroded_histogram[threshold:])
     boundary_area = max(1, area - inner_area)
     return 2.0 * area / boundary_area
@@ -1272,13 +1372,28 @@ def _solve_stroke_weight_adjustment(
     direction = 1.0 if current_weight < target_weight else -1.0
     low = 0.0
     high = max(0.0, max_adjustment)
+    # The binary search reuses the same integer morphology levels. Compute
+    # each level once; subpixel blends and the search remain unchanged.
+    levels = [alpha]
+
+    def adjusted_mask(adjustment: float) -> Image.Image:
+        if abs(adjustment) < 1e-6:
+            return alpha
+        amount = min(MAX_STROKE_WEIGHT_ADJUSTMENT_PX, abs(adjustment))
+        steps = math.floor(amount)
+        fraction = amount - steps
+        required = steps + int(fraction > 1e-6)
+        while len(levels) <= required:
+            levels.append(_morph_ink_mask(levels[-1], dilate=direction > 0))
+        return Image.blend(levels[steps], levels[steps + 1], fraction) if fraction > 1e-6 else levels[steps]
+
     best_adjustment = 0.0
     best_error = abs(current_weight - target_weight)
     for _ in range(9):
         magnitude = (low + high) / 2
         adjustment = direction * magnitude
         candidate_weight = _estimate_optical_stroke_weight(
-            _adjust_stroke_weight(alpha, adjustment)
+            adjusted_mask(adjustment)
         )
         error = abs(candidate_weight - target_weight)
         if error < best_error:
@@ -1295,7 +1410,7 @@ def _solve_stroke_weight_adjustment(
             high = magnitude
     endpoint_adjustment = direction * max_adjustment
     endpoint_error = abs(
-        _estimate_optical_stroke_weight(_adjust_stroke_weight(alpha, endpoint_adjustment))
+        _estimate_optical_stroke_weight(adjusted_mask(endpoint_adjustment))
         - target_weight
     )
     return endpoint_adjustment if endpoint_error < best_error else best_adjustment
@@ -1306,14 +1421,13 @@ def _adjust_stroke_weight(alpha: Image.Image, adjustment_px: float) -> Image.Ima
     if abs(adjustment_px) < 1e-6:
         return alpha
     amount = min(MAX_STROKE_WEIGHT_ADJUSTMENT_PX, abs(adjustment_px))
-    morphology = ImageFilter.MaxFilter(3) if adjustment_px > 0 else ImageFilter.MinFilter(3)
     full_steps = math.floor(amount)
     adjusted = alpha
     for _ in range(full_steps):
-        adjusted = adjusted.filter(morphology)
+        adjusted = _morph_ink_mask(adjusted, dilate=adjustment_px > 0)
     fraction = amount - full_steps
     if fraction > 1e-6:
-        next_step = adjusted.filter(morphology)
+        next_step = _morph_ink_mask(adjusted, dilate=adjustment_px > 0)
         adjusted = Image.blend(adjusted, next_step, fraction)
     return adjusted
 

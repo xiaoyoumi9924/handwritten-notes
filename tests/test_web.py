@@ -18,6 +18,22 @@ class WebConfigTests(unittest.TestCase):
         self.assertTrue(bootstrap["assets"]["fonts"])
         self.assertTrue(bootstrap["examples"])
 
+    def test_moxu_preset_switches_assets_and_restores_other_fonts(self):
+        presets = build_bootstrap()['presets']
+        if 'moxu' not in presets:
+            self.skipTest('Local personal font assets are not installed')
+        font = presets['moxu']
+        self.assertEqual(font['handwriting.reference_glyph_path'], 'font_library/personal_v3_uniform/glyphs')
+        self.assertTrue(font['handwriting.reference_override_weight_match'])
+        for name in ('formal', 'anjingchen', 'shaohua', 'caveat', 'kalam'):
+            if name in presets:
+                self.assertIsNone(presets[name]['handwriting.reference_glyph_overrides_path'])
+                self.assertFalse(presets[name]['handwriting.reference_override_weight_match'])
+        html = (STATIC_ROOT / 'index.html').read_text(encoding='utf-8')
+        self.assertIn('>墨序清言体</button>', html)
+        self.assertLess(html.index('data-font-option="anjingchen"'), html.index('data-font-option="moxu"'))
+        self.assertLess(html.index('data-font-option="moxu"'), html.index('data-font-option="shaohua"'))
+
     def test_webui_exposes_formula_warnings_png_export_and_draft_autosave(self):
         html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
         script = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")

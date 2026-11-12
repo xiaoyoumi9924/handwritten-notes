@@ -68,8 +68,15 @@ class HandwritingConfig:
     sdt_trajectory_enabled: bool = True  # 是否优先使用 SDT 在线轨迹直接渲染字符。
     sdt_trajectory_path: str | None = None  # SDT 轨迹库路径；None 时使用项目内置轨迹包。
     reference_glyph_path: str | None = None  # 可选的照片字形目录。
+    reference_glyph_overrides_path: str | None = None  # 单字修订目录，优先于原始字库。
+    reference_override_weight_match: bool = False  # 限幅匹配修订字形的笔画粗细。
     uniform_ink_enabled: bool = False  # 将照片字形和轨迹字归一到相同笔重。
     reference_preserve_stroke_weight: bool = False  # 统一墨色时保留参考字形的原始笔画粗细。
+    reference_punctuation_font: bool = False  # 参考字形模式下保留字体标点的原始轮廓。
+    reference_rotation_sigma_deg: float = 0.0  # 参考字形逐字旋转标准差，单位度；0 表示关闭。
+    reference_scale_sigma_ratio: float = 0.0  # 参考字形宽高变化的标准差；0 表示关闭。
+    reference_glyph_exclude: str = ""  # 已知有缺陷的参考字形，使用备用字形。
+    reference_latin_f_outline: bool = False  # 使用英文字体原轮廓渲染 f。
     sdt_stroke_width: float = 16.0  # 统一基础笔画粗细，按 SDT 256 单位画布定义。
     sdt_coordinate_jitter: float = 0.6  # 沿轨迹施加的低频平滑坐标扰动幅度。
     sdt_jitter_correlation: float = 10.0  # 坐标和笔压噪声的平滑相关长度，单位重采样点。

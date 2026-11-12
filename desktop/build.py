@@ -23,6 +23,8 @@ args = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--window
         '--add-data', 'font/OFL-Caveat.txt:font',
         '--add-data', 'font/OFL-Kalam.txt:font',
         '--add-data', 'font_library/personal_v6:font_library/personal_v6',
+        '--add-data', 'font_library/personal_v3_uniform:font_library/personal_v3_uniform',
+        '--add-data', 'font_library/personal_v3_corrections:font_library/personal_v3_corrections',
         '--add-data', 'configs:configs', '--add-data', 'examples:examples',
         '--exclude-module', 'torch', '--exclude-module', 'tensorflow',
         'desktop/launcher.py']

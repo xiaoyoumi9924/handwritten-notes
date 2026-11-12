@@ -358,8 +358,8 @@ def _config_paths(value: Any, prefix: str = "") -> set[str]:
 
 # 内部笔迹配置保留给本地配置使用，不单独显示在侧栏。
 INTERNAL_CONFIG_PATHS = frozenset({
-    "handwriting.reference_glyph_path", "handwriting.uniform_ink_enabled",
-    "handwriting.reference_preserve_stroke_weight", "handwriting.math_inline_scale",
+    "handwriting.reference_glyph_path", "handwriting.reference_glyph_overrides_path", "handwriting.reference_override_weight_match", "handwriting.uniform_ink_enabled",
+    "handwriting.reference_preserve_stroke_weight", "handwriting.reference_punctuation_font", "handwriting.reference_rotation_sigma_deg", "handwriting.reference_scale_sigma_ratio", "handwriting.reference_glyph_exclude", "handwriting.reference_latin_f_outline", "handwriting.math_inline_scale",
     "handwriting.math_stroke_weight_scale", "handwriting.math_display_left_aligned",
     "handwriting.math_wrap_long", "handwriting.math_character_rotation_deg",
     "handwriting.math_match_body_ink",
@@ -526,6 +526,21 @@ def _font_presets() -> dict[str, dict[str, Any]]:
             if name != preset_name:
                 for key in fields:
                     preset.setdefault(key, getattr(_DEFAULT_HANDWRITING, key.split(".", 1)[1]))
+    v3_config = PROJECT_ROOT / "configs" / "personal_v3_uniform_test.json"
+    v3_assets = ("font_library/personal_v3_uniform/glyphs", "font_library/personal_v3_uniform/fallback_trajectories.zip",
+                 "font_library/personal_v3_corrections", "font/AnJingChenYingBiXingShu-2.ttf",
+                 "font/1_SDT.ttf", "font/Latin-Caveat-Regular.ttf")
+    if v3_config.is_file() and all((PROJECT_ROOT / path).exists() for path in v3_assets):
+        handwriting = json.loads(v3_config.read_text(encoding="utf-8"))["handwriting"]
+        keys = {key for preset in presets.values() for key in preset if key.startswith("handwriting.")}
+        keys.update(f"handwriting.{key}" for key in handwriting)
+        fields = {key: getattr(_DEFAULT_HANDWRITING, key.split(".", 1)[1]) for key in keys}
+        fields.update({f"handwriting.{key}": value for key, value in handwriting.items()})
+        presets["moxu"] = fields
+        for name, preset in presets.items():
+            if name != "moxu":
+                for key in handwriting:
+                    preset.setdefault(f"handwriting.{key}", getattr(_DEFAULT_HANDWRITING, key))
     return presets
 
 

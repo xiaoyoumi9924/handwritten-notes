@@ -2,7 +2,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const DRAFT_STORAGE_KEY = "markdown-to-handwrite-draft-v1";
 const SCAN_SESSION_KEY = "markdown-to-handwrite-scan-session-v1";
-const PRESET_NAMES = { formal: "纸间清风体", personal_v6: "游丝细行体", anjingchen: "行云映墨体", shaohua: "平方韶华体", caveat: "Caveat", kalam: "Kalam" };
+const PRESET_NAMES = { formal: "纸间清风体", personal_v6: "游丝细行体", anjingchen: "行云映墨体", moxu: "墨序清言体", shaohua: "平方韶华体", caveat: "Caveat", kalam: "Kalam" };
 const SAMPLE_PAGE_COUNT = 3;
 const MAX_SCAN_FILE_BYTES = 18 * 1024 * 1024;
 const RED_LINED_PAPER = "background/提取的红线纸.png";
@@ -549,7 +549,7 @@ function markChanged() {
 
 function updateStyleSelection() {
   $("#font-preset").value = state.selectedPreset || "custom";
-  $(".preset-monogram").textContent = ({ personal_v6: "游", anjingchen: "行", shaohua: "韶", caveat: "C", kalam: "K" })[state.selectedPreset] || "纸";
+  $(".preset-monogram").textContent = ({ personal_v6: "游", anjingchen: "行", moxu: "墨", shaohua: "韶", caveat: "C", kalam: "K" })[state.selectedPreset] || "纸";
   $("#font-preset-name").textContent = PRESET_NAMES[state.selectedPreset] || "自定义笔迹";
   $$('[data-font-option]').forEach((option) => option.setAttribute("aria-selected", String(option.dataset.fontOption === state.selectedPreset)));
   $$("[data-preset]").forEach((button) => {
@@ -2470,6 +2470,8 @@ async function initialize() {
     $("[data-font-option=personal_v6]").disabled = !Object.hasOwn(state.presets, "personal_v6");
     $("#font-preset option[value=anjingchen]").disabled = !Object.hasOwn(state.presets, "anjingchen");
     $("[data-font-option=anjingchen]").disabled = !Object.hasOwn(state.presets, "anjingchen");
+    $("#font-preset option[value=moxu]").disabled = !Object.hasOwn(state.presets, "moxu");
+    $("[data-font-option=moxu]").disabled = !Object.hasOwn(state.presets, "moxu");
     $("#font-preset option[value=shaohua]").disabled = !Object.hasOwn(state.presets, "shaohua");
     $("[data-font-option=shaohua]").disabled = !Object.hasOwn(state.presets, "shaohua");
     $("#font-preset option[value=caveat]").disabled = !Object.hasOwn(state.presets, "caveat");

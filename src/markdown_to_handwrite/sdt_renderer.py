@@ -151,7 +151,7 @@ def render_strokes(
             max(0.0, style.width_jitter),
             max(1.0, style.jitter_correlation),
         )
-        pressure *= float(np.clip(ink_rng.normal(1.0, style.width_jitter * 0.45), 0.82, 1.18))
+        pressure *= min(1.18, max(0.82, float(ink_rng.normal(1.0, style.width_jitter * 0.45))))
         if len(stroke) >= 4 and style.taper > 0:
             edge = max(2, min(len(stroke) // 3, math.ceil(len(stroke) * 0.16)))
             ramp = np.linspace(1.0 - min(0.8, style.taper), 1.0, edge)
@@ -164,14 +164,15 @@ def render_strokes(
     draw = ImageDraw.Draw(mask)
     for stroke, widths in zip(varied_strokes, varied_widths):
         points = stroke * supersample
+        line_points = points.tolist()
         pen_widths = np.maximum(1, np.rint(widths * supersample).astype(int))
         if len(points) == 1:
             _draw_disc(draw, points[0], pen_widths[0])
             continue
         for index in range(len(points) - 1):
             segment_width = max(1, round((pen_widths[index] + pen_widths[index + 1]) / 2))
-            p0 = tuple(points[index])
-            p1 = tuple(points[index + 1])
+            p0 = line_points[index]
+            p1 = line_points[index + 1]
             draw.line((p0, p1), fill=255, width=segment_width)
             _draw_disc(draw, points[index], segment_width)
         _draw_disc(draw, points[-1], pen_widths[-1])
@@ -261,6 +262,15 @@ def _resample_stroke(stroke: np.ndarray, spacing: float) -> np.ndarray:
     ).astype(np.float32)
 
 
+@lru_cache(maxsize=1024)
+def _noise_grid(count: int, knot_count: int) -> tuple[np.ndarray, np.ndarray]:
+    # Reuse deterministic interpolation coordinates, never random samples.
+    knots = np.linspace(0, max(count - 1, 1), knot_count)
+    samples = np.arange(count)
+    knots.flags.writeable = samples.flags.writeable = False
+    return knots, samples
+
+
 def _smooth_noise(
     rng: np.random.Generator,
     count: int,
@@ -272,9 +282,10 @@ def _smooth_noise(
         shape = (count, dimensions) if dimensions > 1 else (count,)
         return np.zeros(shape, dtype=np.float32)
     knot_count = max(3, math.ceil(max(count - 1, 1) / correlation) + 1)
-    knot_x = np.linspace(0, max(count - 1, 1), knot_count)
-    sample_x = np.arange(count)
+    knot_x, sample_x = _noise_grid(count, knot_count)
     values = rng.normal(0.0, sigma, size=(knot_count, dimensions))
+    if dimensions == 1:
+        return np.interp(sample_x, knot_x, values[:, 0])
     result = np.stack(
         [np.interp(sample_x, knot_x, values[:, axis]) for axis in range(dimensions)],
         axis=1,
