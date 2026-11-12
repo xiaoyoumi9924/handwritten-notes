@@ -9,6 +9,7 @@ root = Path(__file__).resolve().parents[1]
 os.chdir(root)
 args = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--windowed',
         '--name', 'Miaobi', '--paths', 'src',
+        *(['--icon', 'desktop/miaobi.ico'] if sys.platform == 'win32' else []),
         '--collect-all', 'webview', '--collect-all', 'pillow_heif',
         '--add-data', 'src/markdown_to_handwrite/webui:markdown_to_handwrite/webui',
         '--add-data', 'src/markdown_to_handwrite/assets:markdown_to_handwrite/assets',
