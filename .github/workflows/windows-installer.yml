@@ -27,7 +27,7 @@ jobs:
           $install = Join-Path $env:RUNNER_TEMP 'Miaobi-installed'
           $p = Start-Process $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$install") -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Installation failed: $($p.ExitCode)" }
-          $shortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Miaobi Studio.lnk'
+          $shortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) '妙笔工坊.lnk'
           if (-not (Test-Path $shortcut)) { throw 'Desktop shortcut missing' }
           $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
           if ($link.TargetPath -ne (Join-Path $install 'Miaobi.exe')) { throw 'Desktop shortcut target incorrect' }

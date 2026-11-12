@@ -1,4 +1,4 @@
-#define MyAppName "Miaobi Studio"
+﻿#define MyAppName "妙笔工坊"
 #define MyAppVersion "0.1.1"
 #define MyAppExeName "Miaobi.exe"
 
@@ -6,7 +6,7 @@
 AppId={{1D747B03-280A-4B41-BF36-792F9A3A49D4}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppPublisher=Miaobi Studio
+AppPublisher=妙笔工坊
 AppPublisherURL=https://github.com/xiaoyoumi9924/handwritten-notes
 DefaultDirName={localappdata}\Programs\Miaobi
 DefaultGroupName={#MyAppName}
@@ -27,8 +27,8 @@ CloseApplications=yes
 Source: "..\dist\Miaobi\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Miaobi Studio"; Filename: "{app}\Miaobi.exe"; IconFilename: "{app}\Miaobi.exe"
-Name: "{autodesktop}\Miaobi Studio"; Filename: "{app}\Miaobi.exe"; IconFilename: "{app}\Miaobi.exe"
+Name: "{autoprograms}\妙笔工坊"; Filename: "{app}\Miaobi.exe"; IconFilename: "{app}\Miaobi.exe"
+Name: "{autodesktop}\妙笔工坊"; Filename: "{app}\Miaobi.exe"; IconFilename: "{app}\Miaobi.exe"
 
 [Run]
-Filename: "{app}\Miaobi.exe"; Description: "Launch Miaobi Studio"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Miaobi.exe"; Description: "Launch 妙笔工坊"; Flags: nowait postinstall skipifsilent
