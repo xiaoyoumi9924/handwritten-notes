@@ -188,6 +188,10 @@ GRID_ENVIRONMENTS = {
     "vmatrix": ("|", "|"),
     "Vmatrix": ("||", "||"),
     "cases": ("{", ""),
+    "array": ("", ""),
+    "aligned": ("", ""),
+    "align": ("", ""),
+    "align*": ("", ""),
 }
 INTEGRAL_SYMBOLS = {"∫", "∬", "∭", "∮"}
 LIMIT_OPERATOR_SYMBOLS = INTEGRAL_SYMBOLS | {"∑", "∏"}
@@ -276,6 +280,8 @@ class MatrixNode:
     rows: list[list["MathNode"]]
     left: str = ""
     right: str = ""
+    alignment: str = ""
+    full_size: bool = False
 
 
 MathNode = TextNode | OperatorNameNode | SpaceNode | IgnoreNode | StyleNode | GeneratedSymbolNode | RowNode | FractionNode | RootNode | ScriptNode | LimitsNode | AccentNode | BinomialNode | MatrixNode
@@ -447,7 +453,7 @@ class LatexMathParser:
             if self.index < len(self.source) and self.source[self.index] == "[":
                 index = LatexMathParser(self._read_bracketed()).parse()
             return RootNode(self._parse_argument(), index)
-        if command in {"bar", "overline", "underline", "vec", "hat", "widehat", "tilde", "widetilde", "dot", "ddot"}:
+        if command in {"boxed", "bar", "overline", "underline", "vec", "hat", "widehat", "tilde", "widetilde", "dot", "ddot"}:
             return AccentNode(self._parse_argument(), command)
         if command in {"overrightarrow", "overleftarrow", "overleftrightarrow"}:
             return AccentNode(self._parse_argument(), "vec")
@@ -461,14 +467,22 @@ class LatexMathParser:
             environment = self._read_group_text()
             if environment not in GRID_ENVIRONMENTS:
                 raise LatexRenderError(f"Unsupported environment: {environment}")
-            end_marker = rf"\end{{{environment}}}"
-            end = self.source.find(end_marker, self.index)
-            if end < 0:
-                raise LatexRenderError(f"Missing {end_marker}.")
-            body = self.source[self.index:end]
-            self.index = end + len(end_marker)
+            alignment = ""
+            if environment == "array":
+                alignment = "".join(self._read_group_text().split())
+                if not re.fullmatch(r"[lcr]+", alignment):
+                    raise LatexRenderError(r"\begin{array} requires l, c, or r column alignments.")
+            start = self.index
+            end = self._read_environment_end(environment)
+            rows = _parse_grid_body(self.source[start:end])
+            aligned = environment.rstrip("*") in {"aligned", "align"}
+            if aligned:
+                columns = max(map(len, rows), default=0)
+                alignment = ("rl" * columns)[:columns]
+            elif alignment and any(len(row) > len(alignment) for row in rows):
+                raise LatexRenderError("Array row has more cells than declared columns.")
             left, right = GRID_ENVIRONMENTS[environment]
-            return MatrixNode(_parse_grid_body(body), left, right)
+            return MatrixNode(rows, left, right, alignment, full_size=aligned)
         if command in {"limits", "nolimits", "displaylimits"}:
             return IgnoreNode(command)
         if command in {"displaystyle", "textstyle", "scriptstyle", "scriptscriptstyle"}:
@@ -532,6 +546,21 @@ class LatexMathParser:
             raise LatexRenderError("Missing closing brace.")
         self.index = end + 1
         return self.source[start:end]
+
+    def _read_environment_end(self, environment: str) -> int:
+        environments = [environment]
+        for match in _LATEX_TOKENS.finditer(self.source, self.index):
+            token = match.group()
+            if token.startswith(r"\begin") and "{" in token:
+                environments.append(token[token.index("{") + 1:-1])
+            elif token.startswith(r"\end") and "{" in token:
+                name = token[token.index("{") + 1:-1]
+                if environments.pop() != name:
+                    raise LatexRenderError(f"Mismatched environment: {name}.")
+                if not environments:
+                    self.index = match.end()
+                    return match.start()
+        raise LatexRenderError(rf"Missing \end{{{environments[-1]}}}.")
 
 
 def _split_top_level_display_spacing(latex: str) -> list[str]:
@@ -1268,6 +1297,22 @@ class FormulaRenderer:
 
     def _accent_box(self, node: AccentNode, size_px: int, seed_extra: str, display_style: bool = False) -> MathBox:
         body = self._layout(node.body, size_px, f"{seed_extra}:body", display_style)
+        if node.kind == "boxed":
+            stroke = self._stroke_width(size_px)
+            tilt, bend, jitter = self._rule_variation(size_px)
+            slack = math.ceil(abs(tilt) + abs(bend) + jitter + stroke) + 2
+            padding = max(4, round(size_px * 0.18))
+            inset = slack + padding
+            image = Image.new("RGBA", (body.width + 2 * inset, body.height + 2 * inset), (0, 0, 0, 0))
+            image.alpha_composite(body.image, (inset, inset))
+            left, top = slack, slack
+            right, bottom = image.width - slack - 1, image.height - slack - 1
+            for x0, y0, x1, y1 in (
+                (left, top, right, top), (right, top, right, bottom),
+                (right, bottom, left, bottom), (left, bottom, left, top),
+            ):
+                self.draw_rule(image, x0, y0, x1, y1, size_px, width=stroke, anchor_ends=True)
+            return MathBox(image, body.baseline + inset)
         if node.kind in {"bar", "overline", "underline", "vec"}:
             stroke = self._stroke_width(size_px)
             stroke_extent = max(1, math.ceil(stroke))
@@ -1339,7 +1384,7 @@ class FormulaRenderer:
     def _matrix_box(self, node: MatrixNode, size_px: int, seed_extra: str) -> MathBox:
         if not node.rows:
             return self._text_box("", size_px, seed_extra)
-        cell_size = max(10, round(size_px * 0.82))
+        cell_size = size_px if node.full_size else max(10, round(size_px * 0.82))
         rows = [
             [self._layout(cell, cell_size, f"{seed_extra}:cell:{row_index}:{column_index}") for column_index, cell in enumerate(row)]
             for row_index, row in enumerate(node.rows)
@@ -1363,7 +1408,10 @@ class FormulaRenderer:
         for row, (baseline, descent) in zip(rows, row_metrics):
             x = 0
             for column, cell in enumerate(row):
-                image.alpha_composite(cell.image, (x + (column_widths[column] - cell.width) // 2, y + baseline - cell.baseline))
+                slack = column_widths[column] - cell.width
+                align = node.alignment[column:column + 1]
+                offset = {"l": 0, "r": slack}.get(align, slack // 2)
+                image.alpha_composite(cell.image, (x + offset, y + baseline - cell.baseline))
                 x += column_widths[column] + col_gap
             y += baseline + descent + row_gap
         grid = MathBox(image, height // 2)
@@ -1717,11 +1765,11 @@ def _parse_display_rows(source: str) -> list[_DisplayRow]:
                 raise LatexRenderError("Multiple equation tags on the same formula group.")
             rows.append(_DisplayRow(aligned_rows, tag))
             continue
-        # The existing renderer also accepts styles and delimiters around
-        # multiline environments. Preserve those tokens when unwrapping them.
+        # Aligned environments inside a command argument are laid out as a
+        # grid by the math parser so the enclosing command can wrap every row.
         unwrapped = (
             environment.group("body") if environment else re.sub(
-                r"\\(?:begin|end)\s*\{(?:aligned|align|equation|gathered)\*?\}", " ", body,
+                r"\\(?:begin|end)\s*\{(?:equation|gathered)\*?\}", " ", body,
             )
         )
         if unwrapped != body:
@@ -1775,44 +1823,13 @@ def _strip_math_delimiters(latex: str) -> str:
 
 def _formula_lines(latex: str) -> list[str]:
     source = _strip_math_delimiters(latex)
-    if re.search(r"\\begin\{(?:matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|cases)\}", source):
-        return [source]
-    source = re.sub(r"\\begin\{(?:aligned|align|equation|gathered)\*?\}", "", source)
-    source = re.sub(r"\\end\{(?:aligned|align|equation|gathered)\*?\}", "", source)
-    return [line.strip() for line in re.split(r"\\\\", source) if line.strip()]
+    source = re.sub(r"\\(?:begin|end)\s*\{(?:equation|gathered)\*?\}", "", source)
+    return [line.strip() for line in _split_top_level(source, r"\\") if line.strip()]
 
 
 def _parse_grid_body(body: str) -> list[list[MathNode]]:
-    rows: list[list[MathNode]] = []
-    row: list[MathNode] = []
-    buffer: list[str] = []
-    depth = 0
-    index = 0
-
-    def flush_cell() -> None:
-        source = "".join(buffer).strip()
-        row.append(LatexMathParser(source).parse() if source else TextNode(""))
-        buffer.clear()
-
-    def flush_row() -> None:
-        flush_cell()
-        rows.append(row.copy())
-        row.clear()
-
-    while index < len(body):
-        char = body[index]
-        if char == "{" and (index == 0 or body[index - 1] != "\\"):
-            depth += 1
-        elif char == "}" and (index == 0 or body[index - 1] != "\\"):
-            depth -= 1
-        if depth == 0 and char == "&":
-            flush_cell()
-        elif depth == 0 and char == "\\" and index + 1 < len(body) and body[index + 1] == "\\":
-            flush_row()
-            index += 1
-        else:
-            buffer.append(char)
-        index += 1
-    if buffer or row:
-        flush_row()
-    return rows
+    return [
+        [LatexMathParser(cell.strip()).parse() for cell in _split_top_level(row, "&")]
+        for row in _split_top_level(body, r"\\")
+        if row.strip()
+    ]

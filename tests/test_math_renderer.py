@@ -75,6 +75,46 @@ class FormulaRendererTests(unittest.TestCase):
         self.assertGreater(fraction.height, plain.height)
         self.assertIsNotNone(fraction.getchannel("A").getbbox())
 
+    def test_boxed_formula_has_padding_border_and_preserves_baseline(self):
+        plain = self.renderer.render_inline(r"\frac{a_n}{n^2}", 34, 900)
+        boxed = self.renderer.render_inline(r"\boxed{\frac{a_n}{n^2}}", 34, 900)
+        self.assertGreater(boxed.width, plain.width)
+        self.assertGreater(boxed.height, plain.height)
+        self.assertGreater(boxed.baseline, plain.baseline)
+        alpha = boxed.image.getchannel("A")
+        self.assertIsNotNone(alpha.crop((0, 0, boxed.width, (boxed.height - plain.height) // 2)).getbbox())
+
+    def test_copied_series_formulas_render_without_fallback(self):
+        source = Path("tests/fixtures/copied_series.md").read_text(encoding="utf-8")
+        blocks = parse_markdown(source)
+        formulas = [block.text for block in blocks if isinstance(block, FormulaBlock)]
+        self.assertGreaterEqual(len(formulas), 8)
+        for formula in formulas:
+            with self.subTest(formula=formula):
+                image = self.renderer.render(formula, 34, 1800)
+                self.assertIsNotNone(image.getchannel("A").getbbox())
+        for block in blocks:
+            for part in getattr(block, "parts", []):
+                if part.kind == "math":
+                    self.renderer.render_inline(part.text, 34, 1800)
+
+    def test_copied_lr_formulas_preserve_sets_and_multiline_layout(self):
+        source = r"""
+\\[ I\_{10}=\\{[B\rightarrow A\cdot,\\$]\\} \\]
+
+\\[ \begin{array}{ll} (0)&S'\rightarrow S\\\ (1)&S\rightarrow A\*B \end{array} \\]
+
+\\[ \boxed{\begin{aligned} FOLLOW(S)&=\\{\\$\\}\\\ FOLLOW(A)&=\\{\*,\\$\\} \end{aligned}} \\]
+"""
+        item, productions, follow = parse_markdown(source)
+        self.assertEqual(item.text, r"I_{10}=\{[B\rightarrow A\cdot,\$]\}")
+        single_row = self.renderer.render(item.text, 34, 900)
+        for block in (productions, follow):
+            with self.subTest(formula=block.text):
+                image = self.renderer.render(block.text, 34, 900)
+                self.assertIsNotNone(image.getchannel("A").getbbox())
+                self.assertGreater(image.height, single_row.height)
+
     def test_root_and_accent_render(self):
         image = self.renderer.render(r"\bar{g}+\overline{v}+\underline{x} = 2\pi\sqrt{\frac{l}{g}}", 34, 1200)
         self.assertGreater(image.width, 0)

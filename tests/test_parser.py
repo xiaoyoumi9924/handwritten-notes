@@ -55,6 +55,55 @@ $$
 
         self.assertFalse(any(part.kind == "math" for part in paragraph.parts))
 
+    def test_copied_series_math_repairs_delimiters_and_subscripts(self):
+        source = r"""变量 \\(n\\) 与 \\([\sqrt n]\\)。
+
+\\[ \boxed{\sum\_{n=1}^{\infty}\sum\_{k=1}^{\infty}\frac{(-1)^{[\sqrt n]}}{n^2+k^2}} \\]
+
+\\[ \begin{aligned} a_n&=1\\\ &+2\end{aligned} \\]
+"""
+        blocks = parse_markdown(source)
+        self.assertEqual([p.text for p in blocks[0].parts if p.kind == "math"], ["n", r"[\sqrt n]"])
+        formulas = [b.text for b in blocks if isinstance(b, FormulaBlock)]
+        self.assertEqual(formulas, [
+            r"\boxed{\sum_{n=1}^{\infty}\sum_{k=1}^{\infty}\frac{(-1)^{[\sqrt n]}}{n^2+k^2}}",
+            r"\begin{aligned} a_n&=1\\ &+2\end{aligned}",
+        ])
+
+    def test_copied_inline_formula_without_display_math(self):
+        paragraph = parse_markdown(r"变量 \\(n\\)，以及 \\(\frac{a\_n}{n^2}\\)。")[0]
+        self.assertEqual([p.text for p in paragraph.parts if p.kind == "math"], ["n", r"\frac{a_n}{n^2}"])
+
+    def test_fully_doubled_latex_commands_keep_real_row_breaks(self):
+        block = parse_markdown(r"\\[ \\begin{aligned} a&=\\frac{1}{n}\\\\ b&=2 \\end{aligned} \\]")[0]
+        self.assertEqual(block.text, r"\begin{aligned} a&=\frac{1}{n}\\ b&=2 \end{aligned}")
+
+    def test_copied_math_keeps_text_escapes_and_code_literal(self):
+        literal = r"\\[ \sum\_{n=1}^N a_n \\]"
+        source = (
+            f"`{literal}`\n\n```latex\n{literal}\n```\n\n"
+            + r"\\[ a\_n+\text{file\_name}+\text{nested {a\_b}} \\]"
+        )
+        blocks = parse_markdown(source)
+        self.assertEqual(blocks[0].parts[0].text, literal)
+        self.assertEqual(blocks[1].text, literal)
+        self.assertEqual(blocks[2].text, r"a_n+\text{file\_name}+\text{nested {a\_b}}")
+
+    def test_standard_math_is_unchanged_beside_copied_math(self):
+        blocks = parse_markdown(r"标准 \(a\_n\)，复制 \\(\sqrt n\\)，美元 $b_n$。")
+        self.assertEqual([p.text for p in blocks[0].parts if p.kind == "math"], [r"a\_n", r"\sqrt n", "b_n"])
+
+    def test_unmatched_copied_delimiters_stay_literal(self):
+        blocks = parse_markdown(r"未闭合 \\(\frac{1}{n}，不要猜测结束位置。")
+        self.assertFalse(any(p.kind == "math" for p in blocks[0].parts))
+
+    def test_indented_copied_math_examples_stay_literal_code(self):
+        literal = r"\\[ \sum\_{n=1}^N a_n \\]"
+        blocks = parse_markdown("    " + literal + "\n\n" + literal)
+        self.assertIsInstance(blocks[0], CodeBlock)
+        self.assertEqual(blocks[0].text, literal)
+        self.assertEqual(blocks[1].text, r"\sum_{n=1}^N a_n")
+
     def test_latex_closer_inside_braced_content_does_not_end_the_formula(self):
         bodies = (
             r"\text{\)}+1",
