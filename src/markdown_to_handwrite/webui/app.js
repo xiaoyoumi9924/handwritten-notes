@@ -35,7 +35,7 @@ const state = {
   files: { pdf: null, docx: null },
   outputFormat: "image",
   page: 0,
-  zoom: 1.06,
+  zoom: 0.96,
   rendering: false,
   renderStartedAt: 0,
   renderTimer: null,
@@ -1846,14 +1846,10 @@ async function exportScans() {
       format: state.scanFormat,
       edits: state.scanPages.map(page => ({marks: page.marks || [], rotation: 0, crop: null})),
     });
-    const link = document.createElement("a");
-    link.href = result.url;
-    link.download = result.filename;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    addExportRecord({name: result.filename, url: result.url, source: "scan", pages: state.scanPages.length});
-    showToast("文件已导出", result.filename);
+    const saved = await saveOutputFile(result.url, result.filename);
+    if (!saved) return;
+    addExportRecord({name: saved, url: result.url, source: "scan", pages: state.scanPages.length});
+    showToast("文件已导出", saved);
   } catch (error) {
     showToast("导出失败", error.message || "请重试。", true);
   }
@@ -1908,7 +1904,7 @@ async function saveTextExport() {
     showToast("导出文件未就绪", "请重新生成手稿后再试。", true);
     return;
   }
-  if (typeof window.showSaveFilePicker !== "function") {
+  if (!window.pywebview?.api?.save_export && typeof window.showSaveFilePicker !== "function") {
     showToast("当前浏览器不支持选择保存位置", "请使用最新版 Chrome 或 Edge 打开此页面后导出。", true);
     return;
   }
@@ -1919,6 +1915,15 @@ async function saveTextExport() {
   };
   const option = formats[format];
   try {
+    if (window.pywebview?.api?.save_export) {
+      if (hasPendingPageEdits() && !(await savePageEdits())) return;
+      const url = state.files[format];
+      const saved = await saveOutputFile(url, option.filename);
+      if (!saved) return;
+      addExportRecord({ name: saved, url, source: "text", pages: state.pages.length });
+      showToast("导出成功", `已保存 ${saved}`);
+      return;
+    }
     const handle = await window.showSaveFilePicker({
       suggestedName: option.filename,
       types: [{ description: option.description, accept: { [option.mime]: [option.extension] } }],
@@ -1942,6 +1947,20 @@ async function saveTextExport() {
   } catch (error) {
     if (error.name !== "AbortError") showToast("导出失败", error.message || "请检查保存权限后重试。", true);
   }
+}
+
+async function saveOutputFile(url, filename) {
+  if (window.pywebview?.api?.save_export) {
+    const result = await window.pywebview.api.save_export(url, filename);
+    return result.cancelled ? null : result.name;
+  }
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  return filename;
 }
 
 function movePage(direction) {
@@ -2552,6 +2571,19 @@ function initHistory() {
   $$('[data-history-source]').forEach(button => button.addEventListener("click", () => { historySource = button.dataset.historySource; historyPage = 1; $$('[data-history-source]').forEach(b => b.classList.toggle("active", b === button)); renderHistory(); }));
   ["#history-format", "#history-time", "#history-search", "#history-page-size"].forEach(selector => $(selector).addEventListener("input", () => { historyPage = 1; renderHistory(); }));
   $("#history-prev").addEventListener("click", () => { historyPage--; renderHistory(); }); $("#history-next").addEventListener("click", () => { historyPage++; renderHistory(); });
+  $("#history-rows").addEventListener("click", async event => {
+    const link = event.target.closest("a[download]");
+    if (!link || !window.pywebview?.api?.save_export) return;
+    event.preventDefault();
+    try {
+      const url = new URL(link.href);
+      if (url.origin !== location.origin) throw new Error("导出文件地址无效。");
+      const saved = await saveOutputFile(url.pathname + url.search, link.download);
+      if (saved) showToast("导出成功", `已保存 ${saved}`);
+    } catch (error) {
+      showToast("导出失败", error.message || "请重新生成后再试。", true);
+    }
+  });
   $("#history-rows").addEventListener("click", event => { const button = event.target.closest("[data-delete-history]"); if (!button) return; if (confirm("确定删除这条导出记录？文件本身不会被删除。")) { saveExportRecords(readExportRecords().filter(r => r.id !== button.dataset.deleteHistory)); renderHistory(); } });
 }
 

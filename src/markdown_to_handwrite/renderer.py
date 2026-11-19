@@ -131,7 +131,8 @@ class ReportRenderer:
                         block.parts,
                         no_indent=block.no_indent,
                         trailing_height=sum(
-                            self._formula_height(prepared_formula_images[formula_index])
+                            self._formula_first_height(prepared_formula_images[formula_index])
+                            if self._paper_rules else self._formula_height(prepared_formula_images[formula_index])
                             for formula_index in (formula_indices[:1] if self._paper_rules else formula_indices)
                         ),
                     )
@@ -439,12 +440,12 @@ class ReportRenderer:
                 formula = blocks[next_index]
                 assert isinstance(formula, FormulaBlock)
                 image = self._render_formula_image(formula.text, seed_extra=f"heading-following:{next_index}")
-                formula_height = self._formula_height(image)
+                formula_height = self._formula_first_height(image) if self._paper_rules else self._formula_height(image)
                 if not height:
                     first_formula_height = formula_height
                 height += formula_height
                 next_index += 1
-            return height if height <= page_capacity else first_formula_height
+            return first_formula_height if self._paper_rules else (height if height <= page_capacity else first_formula_height)
 
         height = self._estimate_block_height(next_block, f"heading-following:{next_index}")
         if isinstance(next_block, ParagraphBlock):
@@ -455,7 +456,9 @@ class ReportRenderer:
                 formula = blocks[formula_index]
                 assert isinstance(formula, FormulaBlock)
                 image = self._render_formula_image(formula.text, seed_extra=f"heading-following:{formula_index}")
-                formula_height += self._formula_height(image)
+                formula_height += self._formula_first_height(image) if self._paper_rules else self._formula_height(image)
+                if self._paper_rules:
+                    break
                 formula_index += 1
             if full_paragraph_height <= page_capacity and full_paragraph_height + formula_height <= page_capacity:
                 height += formula_height
@@ -947,12 +950,38 @@ class ReportRenderer:
             rule_slack = int(np.median(np.diff(self._paper_rules)))
         return gap * 2 + image.height + rule_slack
 
+    def _formula_first_height(self, image: Image.Image) -> int:
+        breaks = image.info.get("math_row_breaks", [])
+        if not breaks:
+            return self._formula_height(image)
+        return self._formula_height(image.crop((0, 0, image.width, breaks[0])))
+
     def _draw_formula(self, text: str, image: Image.Image | None = None) -> None:
         if not text:
             return
         gap = mm_to_px(self.config.layout.formula_gap_mm, self.dpi)
         image = image or self._render_formula_image(text, seed_extra=f"{len(self.pages)}:{self.y}")
         total_h = self._formula_height(image)
+        breaks = image.info.get("math_row_breaks", [])
+        if breaks and self.y + total_h > self.bottom_limit:
+            start = 0
+            ends = [*breaks, image.height]
+            while start < image.height:
+                fitting = [
+                    end for end in ends if end > start
+                    and self.y + self._formula_height(image.crop((0, start, image.width, end))) <= self.bottom_limit
+                ]
+                if not fitting and self.y > self.margin_top:
+                    self._new_page()
+                    continue
+                end = fitting[-1] if fitting else next(end for end in ends if end > start)
+                piece = image.crop((0, start, image.width, end))
+                piece.info.pop("math_row_breaks", None)
+                self._draw_formula(text, image=piece)
+                start = end
+                if start < image.height:
+                    self._new_page()
+            return
         self._ensure_space(total_h)
         self.y += gap
         if self.config.handwriting.math_display_left_aligned and self._paper_rules:

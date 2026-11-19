@@ -745,6 +745,8 @@ class FormulaRenderer:
         for box in boxes:
             image.alpha_composite(box.image, ((width - box.width) // 2, y))
             y += box.height + gap
+        if len(rows) == 1 and rows[0].tag is None and isinstance(rows[0].body, _AlignedRows):
+            image.info["math_row_breaks"] = boxes[0].image.info.get("math_row_breaks", [])
         # The middle of a multiline group is its math axis; single rows retain
         # their actual baseline (including fractions and scripts).
         baseline = boxes[0].baseline if len(boxes) == 1 else height // 2 + round(size_px * 0.25)
@@ -839,6 +841,7 @@ class FormulaRenderer:
         height = sum(baseline + descent for baseline, descent in row_metrics) + row_gap * max(0, len(scaled_rows) - 1)
         image = Image.new("RGBA", (max(1, width), max(1, height)), (0, 0, 0, 0))
         y = 0
+        row_breaks: list[int] = []
         for (cells, tag), (baseline, descent) in zip(scaled_rows, row_metrics):
             body_origin = (
                 (body_available_width - body_width) // 2
@@ -866,8 +869,10 @@ class FormulaRenderer:
             if tag is not None:
                 image.alpha_composite(tag.image, (width - tag.width, y + baseline - tag.baseline))
             y += baseline + descent + row_gap
+            row_breaks.append(min(height, y - row_gap // 2))
 
         group_baseline = height // 2 + round(size_px * 0.25)
+        image.info["math_row_breaks"] = row_breaks[:-1]
         return MathBox(image, min(image.height, group_baseline))
 
     @staticmethod

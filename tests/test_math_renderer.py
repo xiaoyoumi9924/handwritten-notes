@@ -411,6 +411,26 @@ class ReportRuleRenderingTests(unittest.TestCase):
         self.assertIsNone(first_page_difference.getbbox())
         self.assertIsNotNone(second_page_difference.getbbox())
 
+    def test_multiline_formula_uses_remaining_page_without_cutting_rows(self):
+        config = ReportConfig()
+        config.background.style = "image"
+        config.background.image = "background/提取的红线纸.png"
+        config.layout.show_page_numbers = False
+        report = ReportRenderer(config)
+        latex = r"\begin{aligned}" + r"\\".join(
+            rf"&x_{i}=\frac{{{i}}}{{{i + 1}}}" for i in range(8)
+        ) + r"\end{aligned}"
+        image = report._render_formula_image(latex, "pagination")
+        breaks = image.info.get("math_row_breaks", [])
+        self.assertEqual(len(breaks), 7)
+        report.y = report.bottom_limit - report._formula_first_height(image) * 3
+        before = report.pages[0].copy()
+        report._draw_formula(latex, image=image)
+        self.assertEqual(len(report.pages), 2)
+        self.assertIsNotNone(ImageChops.difference(before.convert("RGB"), report.pages[0].convert("RGB")).getbbox())
+        for boundary in breaks:
+            self.assertIsNone(image.getchannel("A").crop((0, boundary, image.width, boundary + 1)).getbbox())
+
     def test_paragraph_justification_only_targets_full_non_final_lines(self):
         config = ReportConfig()
         config.background.auto_discover = False
