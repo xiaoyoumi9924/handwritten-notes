@@ -1157,7 +1157,7 @@ class ScanService:
         scan_id = secrets.token_hex(8)
         scan_root = self.output_root / scan_id
         scan_root.mkdir(parents=True, exist_ok=False)
-        source.save(scan_root / "original.png", format="PNG", optimize=True)
+        source.save(scan_root / "original.png", format="PNG", compress_level=3)
         corners, partial = _detect_page_geometry(source)
         metadata = {"filename": safe_name, "corners": corners, "partialCorners": partial, "size": list(source.size)}
         (scan_root / "scan.json").write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
@@ -1197,13 +1197,13 @@ class ScanService:
             source = opened.convert("RGB")
         manual_corners = validate_page_corners(options.get("corners"))
         auto_corners, partial = metadata.get("corners"), metadata.get("partialCorners", False)
-        if not auto_corners:
+        if "corners" not in metadata:
             auto_corners, partial = _detect_page_geometry(source)
         corners = manual_corners or auto_corners
         top_clip = partial.get("topClip") if isinstance(partial, dict) and not manual_corners else None
         result = process_scan_image(source, corners, mode, orientation, rotation, crop, clean_partial_border=bool(partial) and not manual_corners, top_clip=top_clip)
         aligned = result.copy() if mode == "original" else process_scan_image(source, corners, "original", orientation, rotation, crop)
-        _save_image_atomic(aligned, scan_root / "aligned-original.png", format="PNG", optimize=True)
+        _save_image_atomic(aligned, scan_root / "aligned-original.png", format="PNG", compress_level=3)
         _write_text_atomic(scan_root / "current-options.json", json.dumps({"mode": mode}))
         response = self._save_result(scan_id, result, metadata, warning=not bool(corners))
         response["filterPipelineVersion"] = FILTER_PREVIEW_VERSION
@@ -1245,7 +1245,7 @@ class ScanService:
             with Image.open(source_path) as opened:
                 source = opened.convert("RGB")
             auto_corners, partial = metadata.get("corners"), metadata.get("partialCorners", False)
-            if not auto_corners:
+            if "corners" not in metadata:
                 auto_corners, partial = _detect_page_geometry(source)
             top_clip = partial.get("topClip") if isinstance(partial, dict) and not corners else None
             selected = corners or auto_corners
@@ -1346,7 +1346,7 @@ class ScanService:
             if file_format == "jpg":
                 pages[0].save(output_path, format="JPEG", quality=94, optimize=True)
             else:
-                pages[0].save(output_path, format="PNG", optimize=True)
+                pages[0].save(output_path, format="PNG", compress_level=3)
             return {"url": f"/output/scans/exports/{filename}", "filename": filename}
         filename = f"scan-{export_id}.zip"
         image_extension = "jpg" if file_format == "jpg" else "png"
@@ -1356,7 +1356,7 @@ class ScanService:
                 if file_format == "jpg":
                     page.save(buffer, format="JPEG", quality=94, optimize=True)
                 else:
-                    page.save(buffer, format="PNG", optimize=True)
+                    page.save(buffer, format="PNG", compress_level=3)
                 package.writestr(f"{index:02d}-{name}.{image_extension}", buffer.getvalue())
         return {"url": f"/output/scans/exports/{filename}", "filename": f"扫描图片-{image_extension.upper()}.zip"}
 
@@ -1367,7 +1367,7 @@ class ScanService:
 
     def _save_result(self, scan_id: str, result: Image.Image, metadata: dict[str, Any], warning: bool) -> dict[str, Any]:
         scan_root = self._scan_root(scan_id)
-        _save_image_atomic(result, scan_root / "current.png", format="PNG", optimize=True)
+        _save_image_atomic(result, scan_root / "current.png", format="PNG", compress_level=3)
         preview = result.copy()
         preview.thumbnail((PREVIEW_EDGE, PREVIEW_EDGE), Image.Resampling.LANCZOS)
         revision = secrets.token_hex(4)

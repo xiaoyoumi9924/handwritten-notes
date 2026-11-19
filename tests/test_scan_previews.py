@@ -64,3 +64,15 @@ class ScanPreviewTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_failed_edge_detection_is_not_repeated_for_each_filter(tmp_path):
+    image = Image.new('RGB', (160, 200), 'white')
+    data = io.BytesIO()
+    image.save(data, 'PNG')
+    service = ScanService(tmp_path)
+    with patch('markdown_to_handwrite.scanner._detect_page_geometry', return_value=(None, False)) as detect:
+        scan_id = service.upload('blank.png', data.getvalue())['scanId']
+        service.process(scan_id, {'mode': 'smart'})
+        service.filter_preview(scan_id, {'mode': 'bw'})
+    assert detect.call_count == 1
