@@ -1,48 +1,45 @@
-# ✍️ 妙笔工坊
+<div align="center">
 
+# ✍️ 妙笔工坊 · Handwritten Notes
 
-> 将文字，Markdown 和 Word文档转换为真实手写风格的笔记，也可以扫描、整理纸质文档。支持中文、英文和数学公式，可调整书体、纸张和排版，在本地浏览器中预览并导出。
+### Turn text into handwritten-style notes  
+### 将文字转换为真实手写风格的笔记
 
-![妙笔工坊文本转换界面](docs/images/workspace-example.png)
+<p>
+  <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-555?style=flat-square" alt="Platforms">
+  <img src="https://img.shields.io/badge/License-MIT-3fb950?style=flat-square" alt="MIT License">
+  <img src="https://img.shields.io/github/stars/xiaoyoumi9924/handwritten-notes?style=flat-square" alt="GitHub stars">
+</p>
 
-## 立即下载
+</div>
 
-| 系统 | 下载 |
-| --- | --- |
-| Windows  | [下载 Windows 版](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-Windows.zip) |
-| macOS| [下载 macOS版](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-macOS-Apple-Silicon.zip) |
-| Linux | [下载 Linux 版](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-Linux.tar.gz) |
+妙笔工坊可以将文字、Markdown 和 Word 文档转换为手写风格笔记，也支持纸质文档扫描与整理。支持中文、英文和数学公式，可调整书体、纸张和排版，并在本地浏览器中预览和导出。
 
-## 功能
+Handwritten Notes converts text, Markdown, and Word documents into handwritten-style notes. It also provides document scanning and image enhancement, with local preview and export.
 
-- **文本转换**：输入或导入 Markdown、Word（DOCX），保留标题、段落、列表、表格和常见公式的排版。
-- **手写排版**：提供多种字体，支持调整字号、字距、笔画和纸张背景。
-- **页面预览**：逐页查看转换结果，可添加批注、高亮、下划线，以及裁剪页面。
-- **智能扫描**：导入图片，裁切矫正纸面，使用智能高清、黑白、增亮、灰度或反色效果。
-- **导出与记录**：文本转换和扫描结果支持导出图片、Word 或 PDF，可在导出记录中查看和筛选。
+![妙笔工坊工作区 / Handwritten Notes workspace](docs/images/workspace-example.png)
 
-## 使用步骤
+## ✨ Features / 功能
 
-### 1. 打开程序
+- **Text conversion / 文本转换：** 输入文字或导入 Markdown、DOCX 文档
+- **Handwriting layout / 手写排版：** 调整字体、字号、字距、纸张背景与排版
+- **Page preview / 页面预览：** 逐页查看结果，添加批注、高亮和下划线
+- **Document scanning / 智能扫描：** 裁切矫正、高清、黑白、增亮、灰度和反色处理
+- **Export / 导出：** 导出图片、Word 或 PDF
+- **Personal handwriting research / 个性化笔迹研究：** 提供基于 SDT 的实验工具与记录
 
-解压并打开上方下载的桌面应用。也可以按照[本地部署](#本地部署可选)从源码启动。
+## ⬇️ Download / 下载
 
-### 2. 转换手写文稿
+| Platform | Download |
+|---|---|
+| Windows | [Windows release](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-Windows.zip) |
+| macOS | [macOS Apple Silicon release](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-macOS-Apple-Silicon.zip) |
+| Linux | [Linux release](https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/Miaobi-Linux.tar.gz) |
 
-1. 在「文本转换」中选择 Markdown 或 Word 文件，也可以直接粘贴文字。
-2. 选择正文书体、纸张背景和输出格式；展开「更多排版参数」可继续调整。
-3. 点击「开始转换」，在右侧逐页预览；需要时添加批注、高亮或下划线。
-4. 确认效果后点击导出，选择图片、Word 或 PDF。
+## 🚀 Run Locally / 本地运行
 
-### 3. 扫描纸质文档
-
-1. 切换到「智能扫描」，上传文档照片，支持 JPG、PNG、HEIC/HEIF、BMP 和 WebP。
-2. 调整纸面裁切范围，选择智能高清、黑白、增亮、灰度或反色等效果，点击「开始扫描」。
-3. 逐页检查结果，可旋转或添加标记，再选择图片、Word 或 PDF 导出。
-
-## 本地部署web（可选）
-
-如果希望在浏览器里使用 Web 版，可以在本地一键部署。先安装 [Node.js](https://nodejs.org/)、[Git](https://git-scm.com/downloads) 和 [Python 3.10+](https://www.python.org/downloads/)，然后在终端运行：
+Install Node.js, Git, and Python 3.10+ first.
 
 **macOS / Linux**
 
@@ -56,15 +53,23 @@ curl -fsSL https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/do
 irm https://github.com/xiaoyoumi9924/handwritten-notes/releases/latest/download/install.ps1 | iex
 ```
 
-第一次运行会下载源码、安装依赖并打开页面，同时安装 `miaobi` 命令；以后重新打开终端，运行 `miaobi` 即可启动。
-## ✍️ 定制你的笔迹
+首次启动会安装依赖并打开本地页面。以后可在终端运行 `miaobi` 启动。
 
-想让生成的字更接近自己的笔迹？项目提供基于 [SDT](https://github.com/dailenson/SDT) 的个性化笔迹研究工具：收集并整理手写样本后，可使用 SDT 模型生成笔画轨迹，检查效果并探索制作自己的笔迹风格。
+The first run installs dependencies and opens the local interface. Later, run `miaobi` from a terminal.
 
-1. 准备清晰、无水印的手写样本，并整理成单字参考图。
-2. 从 [SDT 项目](https://github.com/dailenson/SDT)获取源码，按其说明准备独立环境、数据和预训练权重；本仓库不包含这些源码、数据和权重。
-3. 参考[笔迹研究记录](training/new_chinese_handwriting/README.md)运行样本处理和轨迹生成脚本，再检查生成字形的可读性。
+## ✍️ Personal Handwriting / 定制笔迹
 
-## 许可
+项目提供基于 [SDT](https://github.com/dailenson/SDT) 的个性化笔迹研究工具。训练数据、模型权重与第三方项目需按各自说明单独获取；本仓库不包含这些第三方资源。
 
-项目源代码采用 [MIT License](LICENSE)。字体、笔迹资源和第三方代码的授权信息见 [ASSET_LICENSES.md](ASSET_LICENSES.md)。
+The handwriting research workflow is based on SDT. Obtain its source code, datasets, and model weights separately and follow their respective licenses.
+
+## 📖 Documentation / 文档
+
+- [笔迹研究记录 / Handwriting Research Notes](training/new_chinese_handwriting/README.md)
+- [资源许可说明 / Asset Licenses](ASSET_LICENSES.md)
+
+## 📄 License / 许可
+
+源代码采用 [MIT License](LICENSE)。字体、笔迹资源及第三方代码请遵循 [ASSET_LICENSES.md](ASSET_LICENSES.md) 中的说明。
+
+Source code is released under the MIT License. Fonts, handwriting assets, and third-party components have separate terms listed in `ASSET_LICENSES.md`.
